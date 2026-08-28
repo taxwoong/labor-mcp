@@ -1,0 +1,2223 @@
+
+
+
+
+
+
+
+
+
+	
+	
+
+
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<title>
+	중앙노동위원회
+</title>
+
+
+
+
+	
+	
+
+
+<meta charset="utf-8"/>
+<meta http-equiv="X-UA-Compatible" content="IE=edge"/>
+<meta name="viewport" content="width=device-width,initial-scale=1.0,minimum-scale=1.0,maximum-scale=1.0">
+<meta property="og:type" content="website"/>
+<meta property="og:site_name" content="website"/>
+<meta property="og:url" content="http://www.nlrc.go.kr"/>
+<meta property="og:title" content="중앙노동위원회" />
+<meta property="og:description" content=""/>
+<meta property="og:image" content="/nlrc/resources/cmmn/images/mosf.ico"/>
+<meta name="keywords" content="중앙노동위원회">
+<meta name="description" content="중앙노동위원회 홈페이지에 오신 것을 환영합니다. ">
+<link rel="canonical" href="/nlrc">
+<link rel="shortcut icon" href="/nlrc/resources/cmmn/images/mosf.ico" type="image/x-icon">
+<link rel="icon" href="/nlrc/resources/cmmn/images/mosf.ico" type="image/x-icon">
+
+
+
+
+
+
+
+
+
+
+
+
+
+	
+	
+
+
+
+
+
+<link rel="stylesheet" type="text/css" href="/nlrc/resources/cmmn/css/bootstrap/bootstrap-component.css"/>
+
+
+	
+	
+		<script type="text/javascript" src="/nlrc/resources/cmmn/js/jquery/jquery-3.3.1.min.js"></script>
+
+		<script type="text/javascript" src="/nlrc/resources/cmmn/js/jquery/jquery-ui.js"></script>
+	
+		    
+		    
+<script defer type="text/javascript" src="/nlrc/resources/cmmn/js/jquery/jquery.form.min.js"></script>
+<script defer type="text/javascript" src="/nlrc/resources/cmmn/js/jquery/jquery-tmpl.js"></script>
+<script defer type="text/javascript" src="/nlrc/resources/cmmn/js/jquery/jquery.blockUI.js"></script>
+<script defer type="text/javascript" src="/nlrc/resources/cmmn/js/jquery/jquery.waypoints.min.js"></script>
+<script defer type="text/javascript" src="/nlrc/resources/cmmn/js/jquery/jquery.counterup.min.js"></script>
+<script defer type="text/javascript" src="/nlrc/resources/cmmn/js/bootstrap/bootstrap.min.js"></script>
+<script defer type="text/javascript" src="/nlrc/resources/cmmn/js/bootstrap/bootstrap.bundle.min.js"></script>
+<script defer type="text/javascript" src="/nlrc/resources/cmmn/js/jquery/jquery.validate.js"></script>
+<script defer type="text/javascript" src="/nlrc/resources/cmmn/js/jquery/jquery.validate.min.js"></script>
+<script defer type="text/javascript" src="/nlrc/resources/cmmn/js/jquery/jquery.validate.messages.ko.js"></script>
+<script defer type="text/javascript" src="/nlrc/resources/cmmn/js/jquery/additional-methods.js"></script>
+<script defer type="text/javascript" src="/nlrc/resources/cmmn/js/jquery/additional-methods.min.js"></script>
+
+
+
+	
+		
+		
+			
+			<link rel="stylesheet" href="/nlrc/resources/homepage/css/common/animate.css" media="all">
+			<link rel="stylesheet" href="/nlrc/resources/homepage/css/common/jquery.mCustomScrollbar.min.css" media="all">
+			<link rel="stylesheet" href="/nlrc/resources/homepage/css/common/jquery-ui.css">
+			<link rel="stylesheet" href="/nlrc/resources/homepage/css/common/con_com.css" media="all">
+			
+			<script defer type="text/javascript" src="/nlrc/resources/homepage/js/common/modernizr-2.6.2.min.js"></script>
+			<script defer type="text/javascript" src="/nlrc/resources/homepage/js/common/slick.min.js"></script>
+			<script defer type="text/javascript" src="/nlrc/resources/homepage/js/common/jquery.lettering.js"></script>
+			<script defer type="text/javascript" src="/nlrc/resources/homepage/js/common/jquery.textillate.js"></script>
+			<script defer type="text/javascript" src="/nlrc/resources/homepage/js/common/jquery.mCustomScrollbar.concat.min.js"></script>
+			<script defer type="text/javascript" src="/nlrc/resources/homepage/js/common/ScrollMagic.min.js"></script>
+			<script defer type="text/javascript" src="/nlrc/resources/homepage/js/common/debug.addIndicators.min.js"></script>
+			<script defer type="text/javascript" src="/nlrc/resources/homepage/js/common/TweenMax.min.js"></script>
+			<script defer type="text/javascript" src="/nlrc/resources/homepage/js/common/gasp.min.js"></script>
+			
+			<script defer type="text/javascript" src="/nlrc/resources/homepage/js/layout.js"></script>
+			<script defer type="text/javascript" src="/nlrc/resources/homepage/js/common/board.js"></script>
+			<script defer type="text/javascript" src="/nlrc/resources/homepage/js/common/con_com.js"></script>
+			
+			
+			
+				<link rel="stylesheet" href="/nlrc/resources/homepage/css/sub_cnt.css" media="all">
+				<script defer type="text/javascript" src="/nlrc/resources/homepage/js/sub.js"></script>
+			
+			
+
+			
+
+
+	
+	
+
+
+
+
+
+
+
+<script type="text/javascript">
+var popup = null;
+//var url = "http://172.16.16.108:55080/esign/";		// 중계 인증창 호출 url
+//var url = "http://127.0.0.1:8080";	// 중계 인증창 호출 url
+var url = "https://easysign.anyid.go.kr/esign";	// 중계 인증창 호출 url
+var status = "toolbar=no,scrollbars=no,location=no,resizable=no,status=no,menubar=no,width=838,height=611";	// option
+var isBack = false;
+
+$(function() {
+	$('body').on('click', '[data-event="click-authBtnNonMember"]', function(e) {
+		e.preventDefault();
+		isBack = $(this).data('isBack') || false;
+		
+		window.addEventListener("message", receiveMsg, false);
+		
+ 		$.ajax({
+ 			url : '/nlrc/login/easysignHis/autoLogin.do',
+ 			type: 'post',
+ 			data : {'realName' : '백영웅',
+ 					'crcyRwrdInfo': '',
+ 					'brdt' : '',
+ 					'handphone' :''},
+ 			dataType : 'json',
+ 			success: function(result){
+ 				var isLoginPage = location.href.includes('/login/');
+ 				if(isBack || isLoginPage) {
+ 					var returnLoginUrl = result.returnLoginUrl || '';
+ 					if(isLoginPage && returnLoginUrl != '') {
+ 						var returnParam = result.returnParam || {};
+ 						$.postSubmit('/nlrc'.concat(returnLoginUrl), returnParam);
+ 					}else {
+ 						location.href=document.referrer;
+ 					}
+ 				}else {
+ 					location.reload(); 
+ 				}
+ 			}
+ 		});
+		
+		if(popup == null || popup.closed == true){
+			popup = window.open(url,"simpleAuthNonMember",status);	//팝업 호출
+			setTimeout(function(){
+				getAccessInfo("simpleAuthNonMember");
+			},500);
+		}
+	});
+});
+
+function receiveMsg(event) {
+	var data = event.data;
+	var jsonData = JSON.parse(data);
+	if(jsonData.initFlag == "true"){
+// 		console.log("@@@@@ jsonData.initFlag  =  "+jsonData.initFlag);
+		initVal = true;
+		$("#windowCallResult").text("성공");
+		return;
+	}
+// 	console.log("@@@@@ jsonData.fn  =  "+jsonData.fn);
+	if(jsonData.fn == "getToken"){
+		if(jsonData.status == "success"){
+			$("#txId").text(jsonData.res.txId);
+// 			console.log("@@@@@ jsonData.res success =  "+JSON.stringify(jsonData.res));
+		} else {
+// 			console.log("@@@@@ jsonData.res fail =  "+JSON.stringify(jsonData.res));
+		}
+	} else if(jsonData.fn == "authRequest"){
+		if(jsonData.status == "success"){
+// 			console.log("@@@@@ jsonData.res success =  "+JSON.stringify(jsonData.res));
+		} else {
+// 			console.log("@@@@@ jsonData.res fail =  "+JSON.stringify(jsonData.res));
+		}
+	} else {
+		if(jsonData.status == "success"){
+// 			console.log("@@@@@ jsonData.res success =  "+JSON.stringify(jsonData.res));
+			var jsonData = JSON.parse(data);
+			jsonData.jsonPath = $("#jsonPath").val();
+			if(jsonData.fn == "signComplete" || jsonData.fn == "signNonMemberComplete"){
+				jsonData.signTargetOri = $("#signTarget").val();
+			}
+			var param = JSON.stringify(jsonData);
+			$("#jsonData").val(param);
+			
+			$.ajax({
+				url : '/nlrc/login/result.do',
+				type: 'post',
+				data: {'data' : data},
+				dataType : 'json',
+				success: function(result){
+					if((result.status || '') ==  'success') {
+						var isLoginPage = location.href.includes('/login/');
+		 				if(isBack || isLoginPage) {
+		 					var returnLoginUrl = result.returnLoginUrl || '';
+							if(isLoginPage && returnLoginUrl != '') {
+								var returnParam = result.returnParam || {};
+								$.postSubmit('/nlrc'.concat(returnLoginUrl), returnParam);
+							}else {
+								location.href=document.referrer;
+							}
+		 				}else {
+		 					location.reload(); 
+		 				}
+					}else {
+						console.log('간편인증 로그인에 실패하였습니다. 관리자에게 문의해주세요.');
+					}
+// 					console.log("data = "+JSON.stringify(data));
+// 					$("#provider").text(data.provider);
+// 					$("#name").text(data.userNm);
+// 					$("#birthday").text(data.birthday);
+// 					$("#phoneNo").text(data.phoneNo);
+// 					$("#ci").text(data.ci);
+// 					$("#verifySign").text(data.verifySign);
+// 					$("#identity_provider").text(data.identityProvider);
+// 					$("#ssn").text(data.ssn);
+// 					$("#identity_ci").text(data.identityCi);
+// 					$("#verifyCi").text(data.compareCi);
+					
+				}
+			});
+		} else {
+			console.log("@@@@@ jsonData.res fail =  "+JSON.stringify(jsonData.res));
+		}
+	}
+}
+initVal = false;
+initCount = 0;
+function getAccessInfo(fn){
+	$.ajax({
+		url: '/nlrc/login/getAccessInfo.do',
+		method : 'post',
+		dataType : 'json',
+		success : function(data) {
+// 			console.log('getAccessInfo data : ', data);
+			
+			data.fn = fn;
+			sendData(data);
+		}
+	});
+}
+
+initVal = false;
+initCount = 0;
+/* 간편인증 팝업 페이지 호출 */
+function sendData(data){
+// 	console.log('sendData 실행 =>> 팝업 유형:'+data.fn);
+	setTimeout(function(){
+// 		console.log("@@@@@ initVal  =  "+initVal);
+// 		console.log("@@@@@ initCount  =  "+initCount);
+
+		if(initVal){
+			if(data.fn == "simpleAuth"){
+				popup.postMessage('{"simpleType":"simpleAuth", "accKey":"'+data.accKey+'", "accToken":"'+data.accToken+'"}',"*");
+			} else if(data.fn == "simpleSign"){
+				popup.postMessage('{"simpleType":"simpleSign", "accKey":"'+data.accKey+'", "accToken":"'+data.accToken+'","signTarget":"'+data.signTarget+'"}',"*");
+			} else if(data.fn == "simpleAuthNonMember"){
+				popup.postMessage('{"simpleType":"simpleAuthNonMember", "accKey":"'+data.accKey+'", "accToken":"'+data.accToken+'"}',"*");
+			} else if(data.fn == "simpleSignNonMember"){
+				popup.postMessage('{"simpleType":"simpleSignNonMember", "accKey":"'+data.accKey+'", "accToken":"'+data.accToken+'","signTarget":"'+data.signTarget+'"}',"*");
+			}
+			initVal = false;
+			initCount = 0;
+		} else {
+			if(initCount > 20){
+				initCount = 0;
+				return;
+			}
+			sendData(fn);
+			initCount++;
+		}
+	},1500);
+}
+</script>
+		
+		
+		
+		
+		
+		
+		
+	
+
+
+<script defer type="text/javascript" src="/nlrc/resources/cmmn/js/nlrc.cmmn.js"></script>
+<script defer type="text/javascript" src="/nlrc/resources/cmmn/js/nlrc.cmmn.util.js?v=3"></script>
+<script defer type="text/javascript" src="/nlrc/resources/cmmn/js/nlrc.modal.js"></script>
+<script defer type="text/javascript" src="/nlrc/resources/cmmn/js/filecode.js"></script>
+
+
+<script type="module" src="/nlrc/anyid/app/main.js"></script>
+<script src="/nlrc/anyid/app/api/anyidAdaptor.js"></script>
+
+
+<script>let anyidAdaptor = new AnyidAdaptor({ agencyContextPath : "/nlrc"});</script>
+<script type="text/javascript">
+
+window.name = 'nlrc';
+var cp = '/nlrc';
+var contextPath = '/nlrc';
+var pageLocale = '';
+var cmit = '' || '';
+$(function() {
+	localStorage.clear();
+	
+	/*	ajaxSetup */
+	$.ajaxSetup({
+		type: 'POST',
+// 		error: function(request, status, error, settings) {
+// 			console.log("status : " + request.status + "\n error:" + error, settings.url);
+// 		}
+		error: function(jqXHR,textStatus,errorThrown) {
+			console.log(jqXHR.status);
+			console.log(textStatus);
+			var url = this.url;
+			//세션체크가 정상적으로 만들어지지않아서 세션만료시 해당위치에서 에러가 떨어져서 
+// 			if((url.indexOf("insert.do") > 0 || url.indexOf("update.do") > 0) && textStatus == "parsererror"){
+// 				alert("세션이 만료되어 다시 로그인하셔야합니다.\n신청취지 작성중이시면 다른곳에저장후 재로그인하여\n진행하시길바랍니다.")
+// 			}else{
+// 				console.log("관리자에게 문의해주세요");
+// 			}
+		}
+	});
+	
+// 	window.onpageshow = function (e) {
+// 		if(e.persisted || (window.performance && window.performance.navigation.type == 2)){
+// 			$('.blockUI').css('dispaly', 'none');
+// 			$('.loading-container').addClass('d-none')
+// 			$.unblockUI();
+// 		}
+// 	};
+
+// 	window.onbeforeunload = function(e) {
+// 		$.unblockUI();
+// 	};
+
+	//공식 누리집 확인방법
+    $('.gov_btn').on('click',function(){
+        const t = $(this);
+        if(!t.closest('.gov_top').hasClass('active')){
+            $(this).attr('title','접기');
+            $('.gov_top').addClass('active');
+            
+            $("#quick_menu").css('top', $(document).scrollTop() + 402 + "px");
+//             $("#quick_menu").animate({ top: $(document).scrollTop() + 402 + "px" }, 320);
+        }else{
+            $(this).attr('title','펼치기');
+            $('.gov_top').removeClass('active');   
+            $("#quick_menu").animate({ top: $(document).scrollTop() + 210 + "px" }, 500);
+        }
+    });
+
+});
+
+function callMenu() {
+	alert('준비중입니다.');
+	return false;
+}
+
+function _subTabEvent(target, callback) {
+	var type = $(target).data('type') || '01';
+	$('[data-component-role="con"]').find('> div').hide();
+	$('.tabs > li:nth-of-type('+type+')').addClass('on');
+	$('[data-component-role="con"] > div:nth-of-type('+type+')').fadeIn();
+	
+	$(target).on('click', '[data-event="click-title"]', function(e){
+		e.preventDefault();
+		
+		var $this = $(this),
+			target = $this.data('target') || '',
+			title = $this.data('title') || '';
+		
+		if(target !== '') {
+			$('[data-component-role="con"]').find('> div').hide();
+			$this.parent().addClass('on').siblings().removeClass();
+			$(target).fadeIn();
+			
+			$('#searchForm').find('input[name="likeCondition"]').val('');
+			$('#filterForm').find('input[name="likeCondition"]').val('');
+			$('#filterForm').find('input[name="bbsTitle"]').val(title);
+			if(callback) {
+				callback();
+			}
+		}
+	});
+	
+}
+</script>
+
+
+
+
+
+
+
+
+<script type="text/javascript">
+$(function() {
+	$.validator.setDefaults({
+		onkeyup: false,
+		onclick: false,
+		onfocusout: false,
+		showErrors: function(errorMap,errorList){
+			if(this.numberOfInvalids()){
+				var title = $(errorList[0].element).data('title') || '',
+					alertMsg = '';
+				
+				if(title !== ''){
+					alertMsg += title.concat(' ');
+				}
+				
+				alertMsg += errorList[0].message;
+				alert(alertMsg);
+			}
+		}
+	});
+});
+</script>
+</head>
+<body>
+	<div id="skipArea"><a href="#container">본문으로 바로가기</a></div>
+	
+	<div id="wrap">
+		
+		
+
+
+
+
+
+
+
+
+
+
+	
+	
+
+
+
+<script type="text/javascript">
+$(function() {
+	
+	fnCallRcmdSchw();
+	
+	//접속 위원회에 따라 alt변경
+	var logoImg = document.getElementById("logoImg");
+	var logoA = document.getElementById("logoA");
+	var cmit = '';
+	switch (cmit) {
+		case 'busan':		//부산
+			logoImg.alt = "부산지방노동위원회";
+			logoA.title = "부산지방노동위원회";
+		break;
+		case 'chungbuk':	//충북
+			logoImg.alt = "충북지방노동위원회";
+			logoA.title = "충북지방노동위원회";
+		break;
+		case 'chungnam':	//충남
+			logoImg.alt = "충남지방노동위원회";
+			logoA.title = "충남지방노동위원회";
+		break;
+		case 'gangwon':		//강원
+			logoImg.alt = "강원지방노동위원회";
+			logoA.title = "강원지방노동위원회";
+		break;
+		case 'gyeongbuk':	//경북
+			logoImg.alt = "경북지방노동위원회";
+			logoA.title = "경북지방노동위원회";
+		break;
+		case 'gyeonggi':	//경기
+			logoImg.alt = "경기지방노동위원회";
+			logoA.title = "경기지방노동위원회";
+		break;
+		case 'gyeongnam':	//경남
+			logoImg.alt = "경남지방노동위원회";
+			logoA.title = "경남지방노동위원회";
+		break;
+		case 'incheon':		//인천
+			logoImg.alt = "인천지방노동위원회";
+			logoA.title = "인천지방노동위원회";
+		break;
+		case 'jeju':		//제주
+			logoImg.alt = "제주지방노동위원회";
+			logoA.title = "제주지방노동위원회";
+		break;
+		case 'jeonbuk':		//전북
+			logoImg.alt = "전북지방노동위원회";
+			logoA.title = "전북지방노동위원회";
+		break;
+		case 'jeonnam':		//전남
+			logoImg.alt = "전남지방노동위원회";
+			logoA.title = "전남지방노동위원회";
+		break;
+		case 'seoul':		//서울
+			logoImg.alt = "서울지방노동위원회";
+			logoA.title = "서울지방노동위원회";
+		break;
+		case 'ulsan':		//울산
+			logoImg.alt = "울산지방노동위원회";
+			logoA.title = "울산지방노동위원회";
+		break;
+		default:
+			logoImg.alt = "중앙노동위원회";
+			logoA.title = "중앙노동위원회";
+		break;
+	}
+	
+	$('#searchFull').on('click', '[data-event="click-search"]', function(e) {
+		e.preventDefault();
+		
+		var searchData = $('#mainSearchForm').serializeObject(),
+			pQuery = searchData.tot_pQuery || '';
+		
+		if(pQuery === ''){
+			alert('검색어를 입력해 주시기 바랍니다.(특수문자 제외)');
+			return false;
+		}else {
+			var regExp = /[\{\}\[\]\/?.,;:|\)*~!`^\-_+<>@#$%&&\\\=\(\'\"]/gi;
+			if (regExp.test(pQuery)) {
+				alert("특수문자는 검색어에 포함할 수 없습니다. \n\n특수문자를 제외한 검색어로 다시 입력해 주시기 바랍니다.");
+				return false;
+// 				var t = pQuery.replace(regExp, "");
+// 				$('#searchForm').find('input[name="tot_pQuery"]').val(t);
+			}else {
+				$('#mainSearchForm').submit();
+			}
+			
+// 			$.postSubmit('/nlrc/main/search.do', searchData);
+		}
+// 	}).on('keydown', '[data-event$="input"]', function(e){
+// 		e.stopPropagation();
+// 		var $this = $(this),
+// 			isSearch = true;
+		
+// 		if(e && e.key === 'Escape'){
+// 			$this.val('');
+// 		} else if(e && e.which === 13){
+// 			e.preventDefault();
+// 		} else {
+// 			isSearch = false;
+// 		}
+		
+// 		var keyword = $this.val() || '';
+// 		if(isSearch && $this.data('keyword') !== keyword) {
+// 			$('#mainSearchForm').find('input[name="tot_pQuery"]').val(keyword);
+// 			$('#mainSearchForm').submit();
+// 		}
+	}).focus();
+			
+			
+	/**
+	 * 검색엔진 추천 검색어 호출 
+	 *
+	 * @param {data} parameter obj
+	 * @return html
+	 */ 
+	function fnCallRcmdSchw(){
+		 
+		 $.ajax({
+				url : '/nlrc/search/selectRecKeyword.do',
+				type: 'post',
+				data: '',
+				success: function(result){
+					console.log("/search/selectRecKeyword.do::::::::::::::"+result);
+					var data = JSON.parse(result.recKeyword) ;
+					var innerHtml = '<strong class="tit_heading6">추천검색어</strong>';
+					innerHtml += '<div class="rec_list">';
+/* 
+					for(var i = 0; i < data.Data.Word.length ; i++){
+						innerHtml += '<button type="button" class="btn_rec" data-event="click-search" data-keyword='+ data.Data.Word[i] +' >'+'# '+data.Data.Word[i] +'</button>';
+					}  */
+					
+					for(var i = 0; i < data.Data.Query.length ; i++){
+						innerHtml += '<button type="button" class="btn_rec" data-event="click-search" data-keyword="'+ data.Data.Query[i].content +'" >'+'# '+data.Data.Query[i].content +'</button>';
+					}
+					
+					innerHtml += '</div>';
+					$('#recHtml').empty().html(innerHtml);
+					
+				},error : function () {
+					console.log('error');
+				}
+			});
+	}
+	 
+	 
+	$('#recSearch').on('click', '[data-event="click-search"]', function(e) {
+		e.preventDefault();
+		
+		var $this = $(this),
+			keyword = $this.data('keyword') || '',
+			data = $this.data() || {};
+			$('input[name="tot_pQuery"]').val(keyword);
+			$('#searchFull').click();
+	}).focus();			
+});
+
+function goToLink(url){
+	if(url){
+		self.location.href = url;
+	}
+}
+
+ 
+</script>
+
+
+<div class="gov_top" style="padding-bottom: .6rem;height: 2rem;">
+	<div class="inner">
+	    <span class="gov_desc">
+            <img src="/nlrc/resources/homepage/images/main/img_taegeukgi.png" alt="태극기">
+            이 누리집은 대한민국 공식 전자정부 누리집입니다.
+        </span>
+        <!-- <button type="button" class="toggle_btn gov_btn" title="접기">공식 누리집 확인방법</button> -->
+    </div>
+</div>
+<div class="gov_top gov_target">
+    <div class="inner">
+        <div class="toggle_target">
+            <ul class="lst">
+                <li class="icon1">
+                    <strong class="title">공식 누리집 주소 확인하기</strong>
+                    <p class="desc">
+                        go.kr 주소를 사용하는 누리집은 대한민국 정부기관이 관리하는 누리집입니다. 이 밖에 or.kr 또는 .kr등 다른 도메인 주소를 사용하고 있다면 아래 URL에서 도메인 주소를 확인해 보세요.
+                    </p>
+                    <div class="link_area">
+                        <a href="https://uiux.egovframe.go.kr/search.do" target="_blank" title="운영중인 공식 누리집보기 새창 열림">운영중인 공식 누리집보기
+                            <i class="xi-external-link"></i>
+                        </a>
+                    </div>
+                </li>
+                <li class="icon2">
+                    <strong class="title">아이콘 또는 HTTPS 확인하기</strong>
+                    <p class="desc">웹 브라우저의 주소 입력창에 표시된 자물쇠 아이콘과 주소 앞 https://가 있는지 체크하여 보안적용이 되어 있는지 확인하세요.</p>
+                </li>
+            </ul>
+        </div>
+    </div>
+</div>
+		
+<!-- header -->
+<header id="header">
+	<div class="container">
+		<div class="hd_t">
+			<!-- linklst -->
+			<ul class="linklst">
+				<li class="link_sitemap">
+					<a href="/nlrc/guide/guideMap.do" title="누리집안내지도"><span><i class="xi-map-o"></i>누리집안내지도</span></a>
+				</li>
+				<li class="link_faq">
+					<a href="/nlrc/commIntro/workGuide/faq/index.do" title="FAQ">
+						<span><i class="xi-lightbulb-o"></i>FAQ</span>
+					</a>
+				</li>
+				<li>
+					<a href="/nlrc/guide/relatedSites.do" title="관련사이트">
+						<span><i class="xi-link"></i>관련사이트</span>
+					</a>
+				</li>
+				<li>
+<!-- 				<li> -->
+					<a href="/nlrc/en/missions.html" target="_blank" title="영문사이트 새창열기">
+
+						<span><i class="xi-globus"></i>영문사이트</span>
+					</a>
+				</li>
+				
+			</ul>
+			<!-- //linklst -->
+		</div>
+
+		<div class="hd_wrap">
+			<!-- logo -->
+			
+			<div class="logo_wrap">
+				
+				
+				
+					
+					
+						<div style="min-width: 187px; height: auto; overflow: hidden;">
+							<h1>
+								<a href="/nlrc/main.do" id="logoA" title="중앙노동위원회">
+									<img id="logoImg" src="/nlrc/resources/homepage/images/layout/logo/Logo.png" alt="중앙노동위원회" />
+								</a>
+							</h1>
+						</div>
+					
+				
+				<button type="button" class="btn_site_list" aria-expanded="false">
+					<span class="is-blind">관련 사이트 목록 보기</span>
+					<i class="xi-caret-down" aria-hidden="true"></i>
+				</button>
+				<ul class="site_list">
+					<li><a href="/nlrc/main.do">중앙노동위원회</a></li>
+					<li><a href="/nlrc/seoul/main.do">서울지방노동위원회</a></li>
+					<li><a href="/nlrc/busan/main.do">부산지방노동위원회</a></li>
+					<li><a href="/nlrc/gyeonggi/main.do">경기지방노동위원회</a></li>
+					<li><a href="/nlrc/chungnam/main.do">충남지방노동위원회</a></li>
+					<li><a href="/nlrc/jeonnam/main.do">전남지방노동위원회</a></li>
+					<li><a href="/nlrc/gyeongbuk/main.do">경북지방노동위원회</a></li>
+					<li><a href="/nlrc/gyeongnam/main.do">경남지방노동위원회</a></li>
+					<li><a href="/nlrc/incheon/main.do">인천지방노동위원회</a></li>
+					<li><a href="/nlrc/gangwon/main.do">강원지방노동위원회</a></li>
+					<li><a href="/nlrc/chungbuk/main.do">충북지방노동위원회</a></li>
+					<li><a href="/nlrc/jeonbuk/main.do">전북지방노동위원회</a></li>
+					<li><a href="/nlrc/ulsan/main.do">울산지방노동위원회</a></li>
+					<li><a href="/nlrc/jeju/main.do">제주지방노동위원회</a></li>
+				</ul>
+				
+					<img id="headerImg" src="/nlrc/resources/homepage/images/main/header_img.png" alt="국민이주인인나라 함께행복한대한민국" />
+				
+			</div>
+			<!-- gnb -->
+			<div id="nav">
+				<div id="gnb" class="gnb">
+					<ul class="dep01">
+						
+							
+								<li>
+									
+										
+										
+										
+										
+									
+									<a href="/nlrc/board/notice/index.do"   title="소식">
+										소식
+									</a>
+									
+									
+										<ul class="dep02">
+											
+												<li>
+													
+
+														
+														
+														
+														
+													
+													
+													<a href="/nlrc/board/notice/index.do"  title="공지사항">
+														공지사항
+													</a>
+													
+												</li>
+											
+												<li>
+													
+
+														
+														
+														
+														
+													
+													
+													<a href="/nlrc/board/newNews/index.do"  title="소식지">
+														소식지
+													</a>
+													
+												</li>
+											
+												<li>
+													
+
+														
+														
+														
+														
+													
+													
+													<a href="/nlrc/board/reportData/index.do"  title="보도자료">
+														보도자료
+													</a>
+													
+												</li>
+											
+												<li>
+													
+
+														
+														
+														
+														
+													
+													
+													<a href="/nlrc/board/hongbo/index.do"  title="홍보자료">
+														홍보자료
+													</a>
+													
+												</li>
+											
+												<li>
+													
+
+														
+														
+														
+														
+													
+													
+													<a href="/nlrc/board/event/index.do"  title="이벤트">
+														이벤트
+													</a>
+													
+												</li>
+											
+												<li>
+													
+
+														
+														
+														
+														
+													
+													
+													<a href="/nlrc/publicNotice/index.do"  title="공시송달">
+														공시송달
+													</a>
+													
+												</li>
+											
+												<li>
+													
+
+														
+														
+														
+														
+													
+													
+													<a href="/nlrc/meetingSche/index.do"  title="회의일정">
+														회의일정
+													</a>
+													
+												</li>
+											
+										</ul>
+									
+								</li>
+							
+						
+							
+								<li>
+									
+										
+										
+										
+										
+									
+									<a href="/nlrc/policy/policyData/index.do"   title="정책마당">
+										정책마당
+									</a>
+									
+									
+										<ul class="dep02">
+											
+												<li>
+													
+
+														
+														
+														
+														
+													
+													
+													<a href="/nlrc/policy/policyData/index.do"  title="정책자료">
+														정책자료
+													</a>
+													
+												</li>
+											
+												<li>
+													
+
+														
+														
+														
+														
+													
+													
+													<a href="/nlrc/policy/lawData/index.do"  title="법령자료">
+														법령자료
+													</a>
+													
+												</li>
+											
+												<li>
+													
+
+														
+														
+														
+														
+													
+													
+													<a href="/nlrc/policy/liveLaborLaw/index.do"  title="생활노동법률">
+														생활노동법률
+													</a>
+													
+												</li>
+											
+												<li>
+													
+
+														
+														
+														
+														
+													
+													
+													<a href="/nlrc/policy/adr/index.do"  title="대안적분쟁해결기법">
+														대안적분쟁해결기법
+													</a>
+													
+												</li>
+											
+												<li>
+													
+
+														
+														
+														
+														
+													
+													
+													<a href="/nlrc/policy/subjectAnalysis/index.do"  title="주제별 판례 분석집">
+														주제별 판례 분석집
+													</a>
+													
+												</li>
+											
+												<li>
+													
+
+														
+														
+														
+														
+													
+													
+													<a href="/nlrc/policy/adminInfo/index.do"  title="행정정보공개">
+														행정정보공개
+													</a>
+													
+												</li>
+											
+												<li>
+													
+
+														
+														
+														
+														
+													
+													
+													<a href="/nlrc/policy/statistics/index.do"  title="통계현황">
+														통계현황
+													</a>
+													
+												</li>
+											
+												<li>
+													
+
+														
+														
+														
+														
+													
+													
+													<a href="/nlrc/policy/statisticsYear/index.do"  title="통계연보">
+														통계연보
+													</a>
+													
+												</li>
+											
+												<li>
+													
+
+														
+														
+														
+														
+													
+													
+													<a href="/nlrc/policy/infoList/index.do"  title="정보목록">
+														정보목록
+													</a>
+													
+												</li>
+											
+												<li>
+													
+
+														
+														
+														
+														
+													
+													
+													<a href="/nlrc/compliment/index.do"  title="칭찬합시다">
+														칭찬합시다
+													</a>
+													
+												</li>
+											
+										</ul>
+									
+								</li>
+							
+						
+							
+								<li>
+									
+										
+										
+										
+										
+									
+									<a href="/nlrc/minwon/main.do" target="_blank"  title="사건신청">
+										사건신청
+									</a>
+									
+									
+								</li>
+							
+						
+							
+								<li>
+									
+										
+										
+										
+										
+									
+									<a href="/nlrc/mainCase/judgment/search/index.do"   title="주요사례">
+										주요사례
+									</a>
+									
+									
+										<ul class="dep02">
+											
+												<li>
+													
+
+														
+														
+														
+														
+													
+													
+													<a href="/nlrc/mainCase/judgment/search/index.do"  title="판정·결정요지">
+														판정·결정요지
+													</a>
+													
+												</li>
+											
+												<li>
+													
+
+														
+														
+														
+														
+													
+													
+													<a href="/nlrc/mainCase/judgment/index.do"  title="주요판정사례">
+														주요판정사례
+													</a>
+													
+												</li>
+											
+												<li>
+													
+
+														
+														
+														
+														
+													
+													
+													<a href="/nlrc/mainCase/mediatioin/index.do"  title="주요조정사례">
+														주요조정사례
+													</a>
+													
+												</li>
+											
+										</ul>
+									
+								</li>
+							
+						
+							
+								<li>
+									
+										
+										
+										
+										
+									
+									<a href="/nlrc/commIntro/pastChairperson.do"   title="위원회 소개">
+										위원회 소개
+									</a>
+									
+									
+										<ul class="dep02">
+											
+												<li>
+													
+
+														
+														
+														
+														
+													
+													
+													<a href="/nlrc/commIntro/chairpersonIntro.do"  title="위원장 인사말">
+														위원장 인사말
+													</a>
+													
+												</li>
+											
+												<li>
+													
+
+														
+														
+														
+														
+													
+													
+													<a href="/nlrc/commIntro/pastChairperson.do"  title="역대위원장">
+														역대위원장
+													</a>
+													
+												</li>
+											
+												<li>
+													
+
+														
+														
+														
+														
+													
+													
+													<a href="/nlrc/commIntro/committee.do"  title="위원회소개">
+														위원회소개
+													</a>
+													
+												</li>
+											
+												<li>
+													
+
+														
+														
+														
+														
+													
+													
+													<a href="javascript:callMenu();"  title="업무안내">
+														업무안내
+													</a>
+													
+														<ul class="dep03">
+															
+																<li>
+																	
+																		
+																		
+																			<a href="/nlrc/commIntro/workGuide01.do"  title="조정">
+																				조정
+																			</a>
+																		
+																	
+																</li>
+															
+																<li>
+																	
+																		
+																		
+																			<a href="/nlrc/commIntro/workGuide02.do"  title="복수노조">
+																				복수노조
+																			</a>
+																		
+																	
+																</li>
+															
+																<li>
+																	
+																		
+																		
+																			<a href="/nlrc/commIntro/workGuide03.do"  title="심판">
+																				심판
+																			</a>
+																		
+																	
+																</li>
+															
+																<li>
+																	
+																		
+																		
+																			<a href="/nlrc/commIntro/workGuide04.do"  title="차별시정">
+																				차별시정
+																			</a>
+																		
+																	
+																</li>
+															
+																<li>
+																	
+																		
+																		
+																			<a href="/nlrc/commIntro/workGuide/faq/index.do"  title="FAQ">
+																				FAQ
+																			</a>
+																		
+																	
+																</li>
+															
+														</ul>
+													
+												</li>
+											
+												<li>
+													
+
+														
+														
+														
+														
+													
+													
+													<a href="/nlrc/commIntro/member.do"  title="위원소개">
+														위원소개
+													</a>
+													
+												</li>
+											
+												<li>
+													
+
+														
+														
+														
+														
+													
+													
+													<a href="/nlrc/commIntro/deptStaffIntro.do"  title="부서 및 직원소개">
+														부서 및 직원소개
+													</a>
+													
+												</li>
+											
+												<li>
+													
+
+														
+														
+														
+														
+													
+													
+													<a href="/nlrc/commIntro/map.do"  title="찾아오시는 길">
+														찾아오시는 길
+													</a>
+													
+												</li>
+											
+										</ul>
+									
+								</li>
+							
+						
+							
+						
+					</ul>
+				</div>
+			</div>
+
+			<div class="hd_r">
+				<!-- search Full -->
+				<a href="#searchFull" class="btnSrch hashSlide" id="srchOpen" title="통합검색열기"><i class="xi-search"></i>
+					<em class="hid">통합검색열기</em>
+				</a>
+				
+				<div class="searchFull fixSlide" id="searchFull">
+					<div class="container">
+						<h3 class="hid">통합검색</h3>
+						<div class="srchForm">
+							<form id="mainSearchForm" method="post" action="/nlrc/search.do">
+								<fieldset>
+									<legend>통합검색</legend>
+									<input type="hidden" name="searchGb" value="hdSrc" /> 
+									<p><input type="search" name="tot_pQuery" title="검색어 입력 폼" placeholder="검색어를 입력하세요" ></p>
+									<a href="javascript:;" data-event="click-search" class="btnSrch" title="통합검색">
+										<i class="xi-search"></i><em class="hid">통합검색버튼</em>
+									</a>
+								</fieldset>
+							</form>
+						</div>
+						<a href="#srchOpen" class="btnClose" id="srchClose" title="통합검색닫기">
+							<i class="xi-close"></i>
+							<em class="hid">통합검색닫기</em>
+						</a>
+					</div>
+					<div class="recSearch" id="recSearch">
+						<div id="recHtml"></div>
+					</div>
+					<div class="fixblind"></div>
+				</div>
+				
+				<!-- fullMenu -->
+				<a href="#fullMenu" class="fullmenu fullmenuBtn" id="fullmenuOpen" title="전체메뉴">
+					<img src="/nlrc/resources/homepage/images/layout/fullmenuOpen.png" alt="fullmenuOpen.png" />
+				</a>
+			</div>
+		</div>
+	</div>
+</header>
+<!-- //header -->
+		
+		<!-- container -->
+		<div id="container">
+			<!-- 상세 컨텐츠 영역 -->
+			<div id="sub_container_wrap">
+				
+				<!-- 서브 비주얼 -->
+				<div class="s_visual">
+					<div class="title_area">
+						
+							
+							
+								<h4 class="pageTitle">판정·결정요지</h4>
+								<div class="location">
+									<a href="/nlrc/main.do" class="home" title="Home">Home</a>
+									<span>
+										<a href="/nlrc/mainCase/judgment/search/index.do">주요사례</a>
+									</span>
+									
+										
+											
+												
+													
+													
+														<strong>
+															
+															판정·결정요지
+														</strong>
+													
+												
+											
+											
+										
+											
+											
+										
+											
+											
+										
+									
+								</div>
+							
+							
+						
+
+						<!-- sns -->
+						<div class="snsBox">
+							<button type="button" class="btnShare" title="공유하기">
+								<img src="/nlrc/resources/homepage/images/layout/share.png" alt="공유하기">
+							</button>
+							<div class="sns_more">
+								<button type="button" class="btnFbook" data-nlrc-event="click-share" data-platform="facebook" title="페이스북 새창열림">
+									<i class="xi-facebook"></i>
+								</button>
+								<button type="button" class="btnTwt" data-nlrc-event="click-share" data-platform="twitter" title="트위터 새창열림">
+									<i class="xi-twitter"></i>
+								</button>
+<!-- 								<button type="button" class="btnKkot" data-nlrc-event="click-share" data-platform="twitter" title="카카오스토리 새창열림"> -->
+<!-- 									<i class="xi-kakaostory"></i> -->
+<!-- 								</button> -->
+								<button type="button" class="btnBand" data-nlrc-event="click-share" data-platform="band" title="네이버밴드 새창열림">
+									<i class="xi-naver"></i>
+								</button>
+								<button type="button" class="snsClose" title="공유닫기">
+									<i class="xi-close"></i>
+								</button>
+							</div>
+							<button type="button" class="btnPrint" data-nlrc-event="click-print" title="인쇄">
+								<img src="/nlrc/resources/homepage/images/layout/print.png" alt="인쇄">
+							</button>
+						</div>
+						<!-- //sns -->
+					</div>
+				</div>
+				<!-- //서브 비주얼 -->
+
+				<div class="sub_content_wrap">
+					<!-- 왼쪽메뉴 -->
+					
+						
+						
+							<!-- ** class 명명
+									.ov : 현재페이지
+									.on : 하위메뉴 있을시 메뉴 열림
+									.row : 하위메뉴 있을 시
+								** -->
+							<aside id="menu">
+								<h3>
+									<span>
+										주요사례
+									</span>
+								</h3>
+								<div class="menu_wrap">
+									
+									<nav id="lnb">
+										<ul class="lnb">
+											
+												
+													
+													<li class=" on">
+														
+															
+		
+															
+															
+														
+														<a href="/nlrc/mainCase/judgment/search/index.do"  title="판정·결정요지">
+															<span><em>판정·결정요지</em></span>
+														</a>
+														
+													</li>
+												
+													
+													<li class=" ">
+														
+															
+		
+															
+															
+														
+														<a href="/nlrc/mainCase/judgment/index.do"  title="주요판정사례">
+															<span><em>주요판정사례</em></span>
+														</a>
+														
+													</li>
+												
+													
+													<li class=" ">
+														
+															
+		
+															
+															
+														
+														<a href="/nlrc/mainCase/mediatioin/index.do"  title="주요조정사례">
+															<span><em>주요조정사례</em></span>
+														</a>
+														
+													</li>
+												
+											
+										</ul>
+									</nav>
+								</div>
+							</aside>
+						
+					
+					<!-- //왼쪽메뉴 -->
+
+					<div id="sub_content">
+						<div class="subCntBody clearfix">
+							<!-- 서브콘텐츠 -->
+							<section>
+								<div id="cntntsView">
+									
+									
+
+
+	
+	
+
+
+<script type="text/javascript">
+$(function() {
+	// 웹 제목 변경
+	document.title = "판정·결정요지";
+	
+	/**
+	 * init 목록 호출
+	 */
+// 	_renderSearchListByPageIdx();
+	
+	/**
+	 * [data-component-role="filter"] 하위 이벤트 주입
+	 *	- click > search : 목록 검색 
+	 *	- keydown > input[text] : 목록검색
+	 */
+	$('[data-component-role="filter"]').on('click', '[data-event="click-search"]', function(e) {
+		e.preventDefault();
+		
+		var $form = $('#filterForm'),
+			formData = $form.serializeObject() || {};
+		
+		var pQuery = formData.pQuery || '';
+		if(pQuery === '') {
+			alert('검색어를 입력해 주시기 바랍니다.(특수문자 제외)');
+			return false;
+		}
+		
+		var regExp = /[\{\}\[\]\/?.,;:|\)*~!`^\-_+<>@#$%&&\\\=\(\'\"]/gi;
+		if (regExp.test(pQuery)) {
+			alert('특수문자는 검색어에 포함할 수 없습니다. \n\n특수문자를 제외한 검색어로 다시 입력해 주시기 바랍니다.');
+			return false;
+		}
+		
+		var key_end_fdate = formData.key_end_fdate || '',
+			key_end_tdate = formData.key_end_tdate || '';
+		
+		if(key_end_fdate != '' && key_end_tdate != '') {
+			var fdate = new Date(key_end_fdate),
+				tdate = new Date(key_end_tdate);
+			if(fdate.getTime() > tdate.getTime()) {
+				alert('판정일을 확인해 주시기 바랍니다.');
+				return false;
+			}
+		}
+		
+		_renderSearchListByPageIdx(1);
+		
+	}).focus();
+		
+	$('[data-component-role="filter"]').on('click', '[data-event="click-jr1"]', function(e) {
+		
+			var even_gubn = 'JS' || '',
+				resu_yeno = '' || '',
+				midd_rscd = '12' || '',
+				type = '',
+				subType = '';
+//					url = '';
+			
+			switch (even_gubn) {
+			case 'ME': //조정
+				if(midd_rscd == '10'|| midd_rscd == '20'){
+					type = 'mediPlan';
+					subType = '01';
+				}else if(midd_rscd == '30'|| midd_rscd == '40'){
+					type = 'defnShet';
+					subType = '02';
+				}else if(midd_rscd == '11'|| midd_rscd == '50'){
+					alert('사건결과가 [취하]인 경우는 결정서 자료가 없습니다.');
+					return;
+				}
+				break;
+			case 'AR': //중재
+				if(midd_rscd == '10'|| midd_rscd == '20'){
+					type = 'defnShet';
+					subType = '03';
+				}else {
+					alert('사건결과가 [취하]인 경우는 결정서 자료가 없습니다.');
+					return;
+				}
+				break;
+			case 'AS': //중재재심
+				if(midd_rscd == '10'|| midd_rscd == '20' || midd_rscd == '30'){
+					type = 'defnShet';
+					subType = '04';
+				}else {
+					alert('사건결과가 [취하]인 경우는 결정서 자료가 없습니다.');
+					return;
+				}
+			case 'NR30': case 'NR31':
+			case 'NS30': case 'NS31':
+				type = 'brjuPoin';
+				subType = '05';
+				break;
+			default:
+				type = 'brjuPoin';
+				subType = '06';
+				break;
+			}
+			
+			var data = {
+				'type' : type || '',
+				'subType' : subType || '',
+				'even_gubn' : even_gubn || '',
+				'comm_code' : '00' || '',
+				'even_numb' : '2022공정41' || '',
+				//'even_numb' : '2024부해94' || '',
+				'resu_yeno' : resu_yeno || '',
+				'midd_rscd' : midd_rscd || '',		
+				'detail_gubn' : '' || ''				
+/* 				'r_merge_yesno' : tempData.k6 || '',
+				'r_rep_merge_yesno' : tempData.k7 || '',
+				'r_link_even_numb' : tempData.k8 || '' */
+			};
+			
+			$.ajax({
+				url : '/nlrc/mainCase/judgment/search/detail.do',
+				type: 'post',
+				data: data,
+				dataType: 'html',
+				success: function(html){
+					$('[data-component-role="detail"]').empty().html(html);
+					
+					var topHeight = window.scrollY + ((window.innerHeight - $('.layer-wrap').height()) / 4);
+					$('.layer-wrap').css('top', topHeight+'px');
+					_layerPopup(1);
+					
+				},error : function () {
+					console.log('error');
+				}
+			});
+		
+	}).focus();		
+	 
+	/**
+	 * [data-component-role="list"] 하위 이벤트 주입
+	 *	- more : 더보기
+	 *	- detail : 상세조회 와면으로 이동
+	 */
+	$('[data-component-role="list"]').on('click', '[data-event^="click"]', function(e) {
+		e.preventDefault();
+		
+		// EVEN_MAST(CDPT_INFO) : even_mast('','','','','','','','') - even_mast(
+		// LAWS_MAST(LWST_INFO) : doPop('/su/su_admin_q_pop.go?cour_numb=&lawc_code=') - doPop('/su/su_admin_q_pop.go
+		
+		var $this = $(this),
+			role = $this.data('event').split('-')[1] || '';
+		
+		switch (role) {
+		case 'more':
+			var searchGubn = $this.data('searchGubn') || '';
+			if(searchGubn !== '') {
+				$('input[name="searchGubn[]"]').prop('checked', false);
+				$('input[name="searchGubn[]"]').each(function(){
+					var inputValue = $(this).val() || '';
+					if(inputValue == searchGubn){
+						$(this).prop('checked', true);
+					}
+				});
+				$('#filterForm').find('input[name="resultSrc"]').prop('checked', false);
+				
+				_renderSearchListByPageIdx(1);
+			}
+			break;
+		case 'detail':
+			var tempData = $this.data() || {},
+				tableNm = tempData.tableNm || '';
+			
+			if(tableNm == 'TBMREA1000F') {
+				var even_gubn = tempData.k3 || '',
+					resu_yeno = tempData.k4 || '',
+					midd_rscd = tempData.k5 || '',
+					type = '',
+					subType = '';
+// 					url = '';
+				
+				switch (even_gubn) {
+				case 'ME':
+					if(midd_rscd == '10'|| midd_rscd == '20'){
+						type = 'mediPlan';
+						subType = '01';
+					}else if(midd_rscd == '30'|| midd_rscd == '40'){
+						type = 'defnShet';
+						subType = '02';
+					}else if(midd_rscd == '11'|| midd_rscd == '50'){
+						alert('사건결과가 [취하]인 경우는 결정서 자료가 없습니다.');
+						return;
+					}
+					break;
+				case 'AR':
+					if(midd_rscd == '10'|| midd_rscd == '20'){
+						type = 'defnShet';
+						subType = '03';
+					}else {
+						alert('사건결과가 [취하]인 경우는 결정서 자료가 없습니다.');
+						return;
+					}
+					break;
+				case 'AS':
+					if(midd_rscd == '10'|| midd_rscd == '20' || midd_rscd == '30'){
+						type = 'defnShet';
+						subType = '04';
+					}else {
+						alert('사건결과가 [취하]인 경우는 결정서 자료가 없습니다.');
+						return;
+					}
+				case 'NR30': case 'NR31':
+				case 'NS30': case 'NS31':
+					type = 'brjuPoin';
+					subType = '05';
+					break;
+				default:
+					type = 'brjuPoin';
+					subType = '06';
+					break;
+				}
+				
+				var data = {
+					'type' : type || '',
+					'subType' : subType || '',
+					'even_gubn' : tempData.k3 || '',
+					'comm_code' : tempData.k1 || '',
+					'even_numb' : tempData.k2 || '',
+					'resu_yeno' : tempData.k4 || '',
+					'midd_rscd' : tempData.k5 || '',
+					'r_merge_yesno' : tempData.k6 || '',
+					'r_rep_merge_yesno' : tempData.k7 || '',
+					'r_link_even_numb' : tempData.k8 || '',
+					'detail_gubn' : '' || ''		
+				};
+				
+				
+				var win = window.open('about:blank', 'detailForm', 'width=960,height=600, scrollbars=yes, resizable=yes');
+				var $previewForm = $('<form></form>');
+					$previewForm.attr('name', 'detailForm');
+					$previewForm.attr('method', 'post');
+					$previewForm.attr('action', '/nlrc/mainCase/judgment/search/detail.do');
+					$previewForm.attr('target', 'detailForm');
+					
+					$previewForm.append($('<input />', {type : 'hidden', name : 'type', value : type || ''}));
+					$previewForm.append($('<input />', {type : 'hidden', name : 'subType', value : subType || ''}));
+					$previewForm.append($('<input />', {type : 'hidden', name : 'even_gubn', value : tempData.k3 || ''}));
+					$previewForm.append($('<input />', {type : 'hidden', name : 'comm_code', value : tempData.k1 || ''}));
+					$previewForm.append($('<input />', {type : 'hidden', name : 'even_numb', value : tempData.k2 || ''}));
+					$previewForm.append($('<input />', {type : 'hidden', name : 'resu_yeno', value : tempData.k4 || '' }));
+					$previewForm.append($('<input />', {type : 'hidden', name : 'midd_rscd', value : tempData.k5 || '' }));
+					$previewForm.append($('<input />', {type : 'hidden', name : 'r_merge_yesno', value : tempData.k6 || '' }));
+					$previewForm.append($('<input />', {type : 'hidden', name : 'r_rep_merge_yesno', value : tempData.k7 || '' }));
+					$previewForm.append($('<input />', {type : 'hidden', name : 'r_link_even_numb', value : tempData.k8 || '' }));
+					$previewForm.append($('<input />', {type : 'hidden', name : 'detail_gubn', value : '' || '' }));
+					
+					$previewForm.appendTo('body');
+					$previewForm.submit();
+					win.focus();
+				/*
+				$.ajax({
+					url : '/nlrc/mainCase/judgment/search/detail.do',
+					type: 'post',
+					data: data,
+					dataType: 'html',
+					success: function(html){
+						$('[data-component-role="detail"]').empty().html(html);
+						
+						var topHeight = window.scrollY + ((window.innerHeight - $('.layer-wrap').height()) / 4);
+						$('.layer-wrap').css('top', topHeight+'px');
+						_layerPopup(1);
+						
+					},error : function () {
+						console.log('error');
+					}
+				});*/
+				
+			}else {
+// 				console.log('기능확인불가');
+// 				doPop('/su/su_admin_q_pop.go?cour_numb=&lawc_code=')
+			}
+			break;
+		default:
+			break;
+		}
+	});
+		
+		
+	
+	/**
+	 * 페이지 기반 목록 호출
+	 *
+	 * @param {pageIdx} 페이지 번호
+	 * @param {callback} 목록 호출 후, callback function
+	 * @return html
+	 */
+	function _renderSearchListByPageIdx(pageIdx) {
+		_renderSearchList({
+			'currentPage' : pageIdx || $('#filterForm').find('input[name="currentPage"]').val() || 1
+		});
+	}
+	
+	/**
+	 * 목록 호출 
+	 *
+	 * @param {data} parameter obj
+	 * @return html
+	 */
+	function _renderSearchList(data) {
+		var $form = $('#filterForm');
+		
+		var filterFormData = $.extend(($form.serializeObject() || {}), data || {}),
+			searchFormData = $('[data-component-role="list"]').find('form').serializeObject() || {},
+			sendData = $.extend(filterFormData, searchFormData);
+		
+		$.ajax({
+			url : '/nlrc/mainCase/judgment/search/list.do',
+			type: 'post',
+			data: sendData,
+			dataType: 'html',
+			beforeSend : function (xhr) {
+				$('.loading-container').removeClass('d-none');
+			},
+			complete : function() {
+				$('.loading-container').addClass('d-none');
+			},
+			success: function(html){
+				$('[data-component-role="list"]').empty().html(html);
+				
+				//paging event
+				$('[data-component-role="list"]').find('[data-pageindex]').on('click', function (){
+					_renderSearchListByPageIdx($(this).data('pageindex'));
+				});
+			}
+		});
+	}
+	  
+});
+		
+		
+function detailClick(gubn) {
+	var comm_code = "";
+	var even_numb = "";
+	
+	if(gubn  == "JR") {
+		comm_code = $("#begi_orga").val();
+		even_numb = $("#medi_numb").val();
+	} else {
+		comm_code = $("#comm_code").val();
+		even_numb = $("#even_numb").val();		
+	}
+	
+	var even_gubn = $("#even_gubn").val() || '',
+	midd_rscd = $("#midd_rscd").val() || '',
+	type = '',
+	subType = '';
+
+	switch (even_gubn) {
+	case 'ME':
+		if(midd_rscd == '10'|| midd_rscd == '20'){
+			type = 'mediPlan';
+			subType = '01';
+		}else if(midd_rscd == '30'|| midd_rscd == '40'){
+			type = 'defnShet';
+			subType = '02';
+		}else if(midd_rscd == '11'|| midd_rscd == '50'){
+			alert('사건결과가 [취하]인 경우는 결정서 자료가 없습니다.');
+			return;
+		}
+		break;
+	case 'AR':
+		if(midd_rscd == '10'|| midd_rscd == '20'){
+			type = 'defnShet';
+			subType = '03';
+		}else {
+			alert('사건결과가 [취하]인 경우는 결정서 자료가 없습니다.');
+			return;
+		}
+		break;
+	case 'AS':
+		if(midd_rscd == '10'|| midd_rscd == '20' || midd_rscd == '30'){
+			type = 'defnShet';
+			subType = '04';
+		}else {
+			alert('사건결과가 [취하]인 경우는 결정서 자료가 없습니다.');
+			return;
+		}
+	case 'NR30': case 'NR31':
+	case 'NS30': case 'NS31':
+		type = 'brjuPoin';
+		subType = '05';
+		break;
+	default:
+		type = 'brjuPoin';
+		subType = '06';
+		break;
+	}
+	
+	var data = {
+		'type' : type || '',
+		'subType' : subType || '',
+		'even_gubn' : even_gubn || '',
+		'comm_code' : comm_code || '',
+		'even_numb' : even_numb || '', //2007BUHA64
+		'midd_rscd' : midd_rscd || '',
+		'detail_gubn' : gubn || '',
+	};
+	
+	//var win = window.open('about:blank', 'detailForm', 'width=920,height=600, scrollbars=yes, resizable=yes');
+	var $previewForm = $('<form></form>');
+		$previewForm.attr('name', 'detailForm');
+		$previewForm.attr('method', 'post');
+		$previewForm.attr('action', '/nlrc/mainCase/judgment/search/detail.do');
+		$previewForm.attr('target', 'detailForm');
+		
+		$previewForm.append($('<input />', {type : 'hidden', name : 'type', value : type || ''}));
+		$previewForm.append($('<input />', {type : 'hidden', name : 'subType', value : subType || ''}));
+		$previewForm.append($('<input />', {type : 'hidden', name : 'even_gubn', value : even_gubn || ''}));
+		$previewForm.append($('<input />', {type : 'hidden', name : 'comm_code', value : comm_code || ''}));
+		$previewForm.append($('<input />', {type : 'hidden', name : 'even_numb', value : even_numb || ''}));
+		$previewForm.append($('<input />', {type : 'hidden', name : 'midd_rscd', value : midd_rscd || '' }));
+		$previewForm.append($('<input />', {type : 'hidden', name : 'detail_gubn', value : gubn || '' }));
+		
+		$previewForm.appendTo('body');
+		$previewForm.submit();
+		win.focus();
+		
+	/*
+	$.ajax({
+		url : '/nlrc/mainCase/judgment/search/detail.do',
+		type: 'post',
+		data: data,
+		dataType: 'html',
+		success: function(html){
+			$('[data-component-role="detail"]').empty().html(html);
+			
+			var topHeight = window.scrollY + ((window.innerHeight - $('.layer-wrap').height()) / 4);
+			$('.layer-wrap').css('top', topHeight+'px');
+			_layerPopup(1);
+			
+		},error : function () {
+			console.log('error');
+		}
+	});
+	*/
+}
+//날자 유효성 체크
+function chk_validationDate(obj){
+	var val = obj.value;
+	if(!cfn_isValidDate(val)){
+		alert("날짜 형식이 올바르지 않습니다. 날짜를 다시 확인해 주시기 바랍니다. ");
+		obj.value = "";
+		obj.focus();
+		return;
+	}else{
+		val = val.replace(/\-/g, '');
+		val = formatDate(parseInputDate(val));
+		obj.value = val; 
+	}
+}
+</script>
+
+<h3 class="titT1">판정&middot;결정요지</h3>
+
+<!-- 게시판 검색폼 -->
+<div class="bbs_srch bbs_filter" data-component-role="filter">
+	<form id="filterForm">
+		<input type="hidden" name="currentPage" value="" />
+		
+		<fieldset>
+			<div class="bbs_box">
+				<dl class="titForm">
+					<dt><label for="searchGubn0">구분</label></dt>
+					<dd>
+						<div class="radio_wrap">
+							
+								<label for="searchGubn0">
+									<input type="checkbox" id="searchGubn0" name="searchGubn[]" value="BH" checked="checked" title="부당해고·부당노동행위" />
+									부당해고·부당노동행위
+								</label>
+							
+								<label for="searchGubn1">
+									<input type="checkbox" id="searchGubn1" name="searchGubn[]" value="DR" checked="checked" title="차별시정" />
+									차별시정
+								</label>
+							
+								<label for="searchGubn2">
+									<input type="checkbox" id="searchGubn2" name="searchGubn[]" value="RP" checked="checked" title="교섭창구 단일화 절차" />
+									교섭창구 단일화 절차
+								</label>
+							
+								<label for="searchGubn3">
+									<input type="checkbox" id="searchGubn3" name="searchGubn[]" value="SP" checked="checked" title="교섭단위 결정" />
+									교섭단위 결정
+								</label>
+							
+								<label for="searchGubn4">
+									<input type="checkbox" id="searchGubn4" name="searchGubn[]" value="GJ" checked="checked" title="공정대표 의무위반" />
+									공정대표 의무위반
+								</label>
+							
+								<label for="searchGubn5">
+									<input type="checkbox" id="searchGubn5" name="searchGubn[]" value="ET" checked="checked" title="기타판정" />
+									기타판정
+								</label>
+							
+						</div>
+					</dd>
+				</dl>
+				<dl class="titForm">
+					<dt><label for="pQuery">검색어</label></dt>
+					<dd>
+						<input type="text" name="pQuery" id="pQuery" class="InpSel_w50 disIb" title="검색어" placeholder="" />
+						<div class="check_wrap disIb mgl5">
+							<label for="resultSrc">
+								<input type="checkbox" id="resultSrc" name="resultSrc" title="결과내 검색" /> 결과내 검색
+							</label>
+						</div>
+					</dd>
+				</dl>
+				<dl class="titForm">
+					<dt><label for="key_end_fdate">판정일</label></dt>
+					<dd>
+						<div class="date_picker">
+							<span class="datepicker" data-nlrc-event="datepicker" data-name="key_end_fdate">
+								<input type="text" name="key_end_fdate" id="key_end_fdate" class="InpSel txt" title="최소일" placeholder="최소일" autocomplete="off" onchange="chk_validationDate(this)"/>
+							</span>
+							<em>~</em>
+							<span class="datepicker" data-nlrc-event="datepicker" data-name="key_end_tdate">
+								<input type="text" name="key_end_tdate" id="key_end_tdate" class="InpSel txt" title="최대일" placeholder="최대일" autocomplete="off" onchange="chk_validationDate(this)" />
+							</span>
+						</div>
+					</dd>
+				</dl>
+				<dl class="titForm w50">
+					<dt><label for="key_comm_code">관할위원회</label></dt>
+					<dd>
+						<select name="key_comm_code" id="key_comm_code" class="InpSel_w100" title="관할위원회">
+							<option value="all">전체</option>
+							
+								<option value="00">
+									중앙노동위원회
+								</option>
+							
+								<option value="01">
+									서울지방노동위원회
+								</option>
+							
+								<option value="02">
+									부산지방노동위원회
+								</option>
+							
+								<option value="03">
+									경기지방노동위원회
+								</option>
+							
+								<option value="04">
+									충남지방노동위원회
+								</option>
+							
+								<option value="05">
+									전남지방노동위원회
+								</option>
+							
+								<option value="06">
+									경북지방노동위원회
+								</option>
+							
+								<option value="07">
+									경남지방노동위원회
+								</option>
+							
+								<option value="08">
+									인천지방노동위원회
+								</option>
+							
+								<option value="13">
+									울산지방노동위원회
+								</option>
+							
+								<option value="09">
+									강원지방노동위원회
+								</option>
+							
+								<option value="10">
+									충북지방노동위원회
+								</option>
+							
+								<option value="11">
+									전북지방노동위원회
+								</option>
+							
+								<option value="12">
+									제주지방노동위원회
+								</option>
+							
+								<option value="91">
+									연습지방노동위원회
+								</option>
+							
+						</select>
+					</dd>
+				</dl>
+			</div>
+			<div class="btns">
+				<button type="button" data-event="click-search" title="검색" class="btn_bl btnSearch">
+					<i class="xi-search"></i>검색
+				</button>
+			</div>
+			<!-- <div class="btns">
+				<button type="button" data-event="click-jr1" title="초심보기" class="btn_bl btnSearch">
+					<i class="xi-search"></i>초심보기
+				</button>
+			</div>		 -->	
+		</fieldset>
+	</form>
+</div>
+<!-- //게시판 검색폼 -->
+
+<!-- 목록 -->
+<div data-component-role="list" class="cMain mgt30"></div>
+
+<!-- 상세 -->
+<div data-component-role="detail" class="layer-wrap" layer="1" style="width:70%;"></div>
+<!-- 상세 -->
+<div data-component-role="detail_popup" class="layer-wrap" layer="2" style="width:70%;"></div>
+
+								</div>
+							</section>
+							<!-- 서브콘텐츠 -->
+						</div>
+
+					</div>
+				</div>
+			</div>
+			<!-- 상세 컨텐츠 영역 -->
+		</div>
+		<!-- //container -->
+
+		<!-- 전체메뉴 -->
+		<div class="popFullmenu">
+			<div id="fullMenu">
+				<h3 class="hid">전체메뉴</h3>
+				<div class="sub_container">
+					<div class="nav"></div>
+				</div>
+				<div class="container">
+					<a href="#fullmenuOpen" id="fullmenuClose" class="fullmenuBtn" title="전체메뉴 닫기">
+						<span class="hid">전체메뉴 닫기</span>
+						<i class="xi-close"></i>
+					</a>
+				</div>
+			</div>
+		</div>
+		<!-- //전체메뉴 -->
+		
+		
+		
+
+
+
+
+
+	
+	
+
+
+<footer id="footer">
+	<div class="ft_wrap container">
+		<ul class="f_tside">
+			<li><a href="/nlrc/commIntro/map.do" title="찾아오시는 길"><span>찾아오시는 길</span></a></li>
+			<li><a href="/nlrc/guide/privacyPolicy/index.do" class="f_lia" title="개인정보처리방침"><span>개인정보처리방침</span></a></li>
+			
+			<li><a href="/nlrc/guide/openViewerDownload.do" title="오픈뷰어다운로드"><span>오픈뷰어다운로드</span></a></li>
+			<li><a href="/nlrc/guide/deptPhNum.do" title="대표 전화번호"><span>대표 전화번호</span></a></li>
+			<li><a href="/nlrc/guide/guide.do" title="홈페이지 이용안내"><span>홈페이지 이용안내</span></a></li>
+		</ul>
+		
+		<div class="f_info_wrap">
+			
+				
+					
+				
+				
+				
+				
+				
+				
+				
+				
+				
+				
+				
+				
+				
+				
+			
+			<p class="copyright"><em>(우 30117) 세종특별자치시 한누리대로 422, 11동 3층, 4층(어진동)<br>
+				Copyright 2014. National Labor Relations Commission. All right reserved.</em></p>
+		</div>
+	</div>
+</footer>
+
+<!-- quick menu -->
+
+<!-- //quick menu -->
+		
+		<div class="loading-container d-none">
+			<div class="loading">
+				<span class="loading-text">loading</span>
+			</div>
+		</div>
+	</div>
+</body>
+</html>

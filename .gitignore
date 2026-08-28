@@ -1,0 +1,8 @@
+__pycache__/
+*.pyc
+.venv/
+server.log
+setup_task.log
+local_env.bat
+*.local.md
+.pytest_cache/
