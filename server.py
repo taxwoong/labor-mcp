@@ -79,9 +79,13 @@ mcp = FastMCP(
         "임금대장을 다룰 때 주민등록번호·계좌번호 등은 입력하지 마세요 — 스키마가 요구하지 "
         "않으며, 입력값은 AI 대화 컨텍스트를 통과합니다."
     ),
-    # MCP 스펙은 로컬 바인딩을 권고한다. 0.0.0.0이면 SDK의 DNS 리바인딩 보호도 꺼진다.
-    # Tailscale Funnel은 localhost로 접속하므로 기능 손실 없이 LAN 노출면이 사라진다.
-    host=os.environ.get("HOST", "127.0.0.1"),
+    # MCP 스펙은 로컬 바인딩(127.0.0.1)을 권고하지만, **이 서버컴퓨터에서는 쓸 수 없다** —
+    # Windows에서 `localhost`가 ::1(IPv6)로 먼저 풀리는데 uvicorn은 주소 하나에만 바인딩되고,
+    # Tailscale Funnel의 전달 대상이 `localhost:8735`라 IPv6로 접속해 연결이 거부된다
+    # (2026-09-01 실장애: 커넥터 연결 실패). 127.0.0.1로 좁히려면 Funnel 대상을
+    #   tailscale funnel --set-path=<비밀경로> 127.0.0.1:8735
+    # 로 먼저 바꿔야 한다. HOST 환경변수로 조정 가능.
+    host=os.environ.get("HOST", "0.0.0.0"),
     port=PORT,
     stateless_http=False,
 )
