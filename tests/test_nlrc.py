@@ -14,10 +14,12 @@ import pytest
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
 
+import nlrc  # noqa: E402
 from nlrc import (  # noqa: E402
     CATEGORIES,
     CATEGORY_NAME_BY_CODE,
     NlrcClient,
+    NlrcParseError,
     _detail_type,
     _normalize_date,
     _resolve_categories,
@@ -261,3 +263,61 @@ def test_live_get_detail_bad_keys_not_found(client):
            "k5": "20", "k6": "N", "k7": "N", "k8": ""}
     detail = client.get_detail(bad, use_cache=False)
     assert detail["found"] is False
+
+
+# ---------------------------------------------------------------------------
+# 파서 생존 판정 (2026-09-01 추가)
+#
+# 스크래핑 서버의 최대 리스크는 "사이트 개편으로 소리 없이 깨져서 0건처럼 보이는 것"이다.
+# 아래 세 케이스는 실제 픽스처를 훼손해 개편을 흉내 내고, search()가 이를
+# NlrcParseError로 구분해 내는지 검증한다. 개편을 "검색 결과 없음"으로 반환하면 실패.
+# ---------------------------------------------------------------------------
+import re as _re
+
+
+def _client_returning(html):
+    """_post를 고정 HTML로 대체한 클라이언트 — 네트워크 없이 search() 전체 경로를 탄다."""
+    c = nlrc.NlrcClient.__new__(nlrc.NlrcClient)
+    c._cache = {}
+    c._cache_ttl = 0
+    c._post = lambda url, data, validate: html
+    return c
+
+
+@pytest.fixture(scope="module")
+def fixture_html():
+    return FIXTURE.read_text(encoding="utf-8")
+
+
+def test_정상_픽스처는_통과한다(fixture_html):
+    r = _client_returning(fixture_html).search("해고", use_cache=False)
+    assert r["items"], "정상 픽스처인데 항목을 못 읽었다"
+    assert r["total"]
+
+
+def test_결과영역_마크업_교체는_PARSE_ERROR(fixture_html):
+    """결과 컨테이너가 통째로 바뀐 경우 — 예전에는 '검색 결과가 없습니다'로 나갔다."""
+    broken = fixture_html.replace('class="C_body"', 'class="Result_body_v2"')
+    with pytest.raises(nlrc.NlrcParseError):
+        _client_returning(broken).search("해고", use_cache=False)
+
+
+def test_항목_클래스명_변경은_PARSE_ERROR(fixture_html):
+    """총건수는 읽히는데 목록만 못 읽는 경우 — total>0 & items=0."""
+    broken = fixture_html.replace('<dl class="C_Cts"', '<dl class="C_Cts_v2"')
+    with pytest.raises(nlrc.NlrcParseError) as e:
+        _client_returning(broken).search("해고", use_cache=False)
+    assert "부존재" in str(e.value)
+
+
+def test_필드_셀렉터_변경은_PARSE_ERROR(fixture_html):
+    """items 개수는 정상인데 내용만 비는 부분 붕괴 — 구조 카나리만으로는 못 잡는다."""
+    broken = _re.sub(r'<em class="date"', '<em class="dt"', fixture_html)
+    with pytest.raises(nlrc.NlrcParseError) as e:
+        _client_returning(broken).search("해고", use_cache=False)
+    assert "판정일" in str(e.value)
+
+
+def test_page_음수는_거부한다(fixture_html):
+    with pytest.raises(ValueError):
+        _client_returning(fixture_html).search("해고", page=0, use_cache=False)

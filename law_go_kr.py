@@ -28,7 +28,76 @@ _TAG_RE = re.compile(r"<([^/>\s]+)>\s*(.*?)\s*</\1>", re.S)
 
 
 class LawGoKrError(Exception):
-    pass
+    """law.go.kr 클라이언트 공통 예외 (하위 예외의 기반 — 기존 except 절 호환)."""
+
+
+class LawAuthError(LawGoKrError):
+    """OC 미설정·오류, IP 미등록, 호출한도 초과 — 자료 부존재와 무관."""
+
+
+class LawUpstreamError(LawGoKrError):
+    """네트워크·HTTP 오류 — 자료 부존재와 무관."""
+
+
+class LawNotFound(LawGoKrError):
+    """검색·조회는 성공했으나 해당 자료가 없음."""
+
+
+class LawInvalidInput(LawGoKrError, ValueError):
+    """입력 형식 오류. ValueError를 겸해 기존 except ValueError 경로와도 호환."""
+
+
+# MCP 응답의 status 5값 — 원천 장애(UPSTREAM/PARSE/AUTH)를 "자료 없음"(NOT_FOUND)과
+# 절대 섞지 않는 것이 이 계약의 목적이다.
+STATUS_OK = "OK"
+STATUS_NOT_FOUND = "NOT_FOUND"
+STATUS_UPSTREAM = "UPSTREAM_ERROR"
+STATUS_PARSE = "PARSE_ERROR"
+STATUS_AUTH = "AUTH_ERROR"
+STATUS_INVALID = "INVALID_INPUT"
+
+
+def status_of(exc: BaseException) -> str:
+    """예외를 status 값으로 매핑 (law.go.kr 계열 + requests)."""
+    if isinstance(exc, LawAuthError):
+        return STATUS_AUTH
+    if isinstance(exc, LawNotFound):
+        return STATUS_NOT_FOUND
+    if isinstance(exc, LawInvalidInput):
+        return STATUS_INVALID
+    if isinstance(exc, (LawUpstreamError, requests.exceptions.RequestException)):
+        return STATUS_UPSTREAM
+    if isinstance(exc, ValueError):
+        return STATUS_INVALID
+    return STATUS_UPSTREAM
+
+
+_DATE_SEP_RE = re.compile(r"^(\d{4})[-./](\d{1,2})[-./](\d{1,2})$")
+
+
+def _norm_date(value: str, field: str = "날짜") -> str:
+    """YYYYMMDD로 정규화. 'YYYY-MM-DD'·'YYYY.MM.DD'는 받아주고, 그 외 형식은 거부한다.
+
+    문자열 비교로 시행본을 고르는 코드가 많아, 형식이 어긋난 값을 그대로 흘려보내면
+    오류 없이 **다른 시점의 조문**이 선택된다(2026-09-01 리뷰에서 실측 확인).
+    """
+    if value in (None, ""):
+        return ""
+    v = str(value).strip()
+    if re.fullmatch(r"\d{8}", v):
+        pass
+    else:
+        m = _DATE_SEP_RE.match(v)
+        if not m:
+            raise LawInvalidInput(
+                f"{field} 형식 오류: {value!r} — YYYYMMDD 8자리로 넣으세요 (예: 20250315). "
+                "형식이 맞지 않으면 다른 시점의 조문이 조용히 선택될 수 있어 거부합니다.")
+        v = f"{m.group(1)}{int(m.group(2)):02d}{int(m.group(3)):02d}"
+    try:
+        time.strptime(v, "%Y%m%d")
+    except ValueError:
+        raise LawInvalidInput(f"{field} 형식 오류: {value!r} — 존재하지 않는 날짜입니다.")
+    return v
 
 
 def _strip_cdata(s: str) -> str:
@@ -40,9 +109,50 @@ def _strip_tags(s: str) -> str:
     return re.sub(r"<[^>]+>", "", s)
 
 
+# 인증 실패 응답은 HTTP 200 + 아래 봉투로 온다 (2026-09-01 실측):
+#   <Response><result>사용자 정보 검증에 실패하였습니다.</result>
+#            <msg>… 정확한 서버장비의 IP주소 및 도메인주소를 등록해 주세요.</msg></Response>
+# 본문에 "인증"이라는 단어가 없어서, 예전의 ("인증" and "실패") 조건은 전혀 걸리지 않았고
+# 이 오류 XML이 정상 응답으로 파싱돼 모든 도구가 조용히 "0건"을 반환했다(캐싱까지 됐다).
+_AUTH_FAIL_RE = re.compile(r"<result>\s*(?:<!\[CDATA\[)?\s*([^<\]]*?)\s*(?:\]\]>)?\s*</result>", re.S)
+_AUTH_FAIL_HINTS = ("검증에 실패", "인증", "등록되지 않은", "권한이 없", "횟수를 초과", "일일 요청")
+
+# law.go.kr이 인식하지 못하는 court 분류어 — 넘기면 오류 없이 0건이 되어 "판례 없음"으로 둔갑한다
+_BAD_COURT_VALUES = {"하위법원", "하급심", "하급법원", "지방법원급", "1심", "2심", "supreme", "lower"}
+
+# 원문 확인용 공개 URL. law.go.kr XML의 '...상세링크'는 `?OC=<기관코드>`가 박힌 DRF
+# 주소라서 그대로 노출하면 **API 자격증명이 대화 컨텍스트로 새어나간다** — 쓰지 않는다.
+# 아래 두 패턴은 OC 없이 열리는 것을 실측 확인했다 (2026-09-01).
+PREC_VIEWER = "https://www.law.go.kr/precInfoP.do?precSeq={}"
+EXPC_VIEWER = "https://www.law.go.kr/expcInfoP.do?expcSeq={}"
+
+
+def _check_auth_error(text: str) -> None:
+    """법제처 오류 봉투를 감지해 AuthError로 승격. 감지되면 캐싱하지 않는다."""
+    head = text[:1000]
+    if "<Response>" not in head and "<response>" not in head:
+        return
+    m = _AUTH_FAIL_RE.search(head)
+    if not m:
+        return
+    msg = m.group(1).strip()
+    if not msg or not any(h in msg for h in _AUTH_FAIL_HINTS):
+        return
+    detail = ""
+    m2 = re.search(r"<msg>\s*(?:<!\[CDATA\[)?\s*(.*?)\s*(?:\]\]>)?\s*</msg>", head, re.S)
+    if m2:
+        detail = " / " + _strip_cdata(m2.group(1))
+    raise LawAuthError(
+        f"law.go.kr 인증 실패: {msg}{detail} — OC 또는 서버 IP 등록을 확인하세요 "
+        "(open.law.go.kr에서 현재 서버 공인 IP 등록). "
+        "이것은 자료가 없다는 뜻이 아닙니다 — 검색 결과 0건으로 해석하지 마세요.")
+
+
 def _get(endpoint: str, **params) -> str:
     if not OC:
-        raise LawGoKrError("LAW_API_OC 환경변수가 설정되지 않았습니다 — law.go.kr에서 발급받은 기관코드(OC)를 설정하세요.")
+        raise LawAuthError(
+            "LAW_API_OC 환경변수가 설정되지 않았습니다 — law.go.kr에서 발급받은 기관코드(OC)를 설정하세요. "
+            "이것은 자료가 없다는 뜻이 아닙니다.")
     p = {"OC": OC, "type": "XML"}
     p.update({k: v for k, v in params.items() if v not in (None, "", 0)})
     key = (endpoint, tuple(sorted(p.items())))
@@ -50,12 +160,16 @@ def _get(endpoint: str, **params) -> str:
     now = time.time()
     if hit and hit[0] > now:
         return hit[1]
-    r = requests.get(f"{BASE}/{endpoint}", params=p, timeout=TIMEOUT,
-                     headers={"User-Agent": "nts-tax-mcp/1.0"})
-    r.raise_for_status()
+    try:
+        r = requests.get(f"{BASE}/{endpoint}", params=p, timeout=TIMEOUT,
+                         headers={"User-Agent": "labor-mcp/1.0"})
+        r.raise_for_status()
+    except requests.exceptions.RequestException as e:
+        raise LawUpstreamError(
+            f"law.go.kr 접속 실패: {type(e).__name__}: {e} — 원천 사이트 장애·네트워크 문제입니다. "
+            "이것은 자료가 없다는 뜻이 아닙니다.") from e
     text = r.text
-    if "인증" in text[:500] and "실패" in text[:500]:
-        raise LawGoKrError("law.go.kr 인증 실패 — OC 또는 IP 등록 확인 필요 (open.law.go.kr에서 현재 서버 IP 등록)")
+    _check_auth_error(text)   # 오류 응답은 캐싱하지 않는다 (복구 후에도 10분간 0건을 서빙하던 문제)
     if len(_cache) >= _CACHE_MAX:
         del _cache[min(_cache, key=lambda k: _cache[k][0])]
     _cache[key] = (now + _CACHE_TTL, text)
@@ -79,10 +193,21 @@ class LawGoKrClient:
     # ---------- 판례 (법제처 제공 대법원·하급심) ----------
     def search_cases(self, keyword: str, court: str = "", date_from: str = "",
                      date_to: str = "", display: int = 10, page: int = 1):
-        """target=prec 판례 검색. court: '대법원' 또는 '하위법원'(빈값=전체).
+        """target=prec 판례 검색.
+
+        court: **법원명을 그대로** 넣는다 — '대법원', '서울고등법원' 등(빈값=전체).
+          '하위법원'·'하급심' 같은 분류어는 API가 받지 않아 **항상 0건**이 되므로 거부한다
+          (2026-09-01 실측: 통상임금 → 하위법원 0건 / 대법원 531건 / 서울고등법원 195건).
         date_from/date_to: YYYYMMDD (선고일자 범위)."""
+        date_from = _norm_date(date_from, "date_from")
+        date_to = _norm_date(date_to, "date_to")
         params = dict(target="prec", query=keyword, display=display, page=page, search=2)
         if court:
+            if court.strip() in _BAD_COURT_VALUES:
+                raise LawInvalidInput(
+                    f"court={court!r}는 law.go.kr이 인식하지 못해 항상 0건이 됩니다 — "
+                    "법원명을 그대로 넣으세요 (예: '대법원', '서울고등법원'). "
+                    "하급심 전체를 한 번에 거르는 필터는 제공되지 않습니다.")
             params["curt"] = court
         if date_from or date_to:
             params["prncYd"] = f"{date_from or '19450815'}~{date_to or '20991231'}"
@@ -99,19 +224,29 @@ class LawGoKrClient:
                 "선고일자": it.get("선고일자", ""),
                 "판결유형": it.get("판결유형", ""),
                 "사건종류명": it.get("사건종류명", ""),
+                "출처": PREC_VIEWER.format(it["판례일련번호"]) if it.get("판례일련번호") else "",
             } for it in items],
         }
 
     def get_case(self, case_serial: str, max_chars: int = 8000):
         """target=prec 판례 본문. case_serial = 판례일련번호."""
         xml = _get("lawService.do", target="prec", ID=case_serial)
-        d = {}
+        d, truncated = {}, []
         for tag in ("사건명", "사건번호", "법원명", "선고일자", "판시사항", "판결요지", "참조조문", "참조판례", "판례내용"):
             m = re.search(rf"<{tag}>(.*?)</{tag}>", xml, re.S)
             if m:
-                d[tag] = _strip_tags(_strip_cdata(m.group(1)))[: max_chars if tag == "판례내용" else 4000]
+                full = _strip_tags(_strip_cdata(m.group(1)))
+                limit = max_chars if tag == "판례내용" else max(max_chars, 4000)
+                d[tag] = full[:limit]
+                if len(full) > limit:
+                    truncated.append(f"{tag}({len(full)}자 → {limit}자)")
         if not d:
-            raise LawGoKrError(f"판례 본문 없음 (일련번호 {case_serial}) — 응답 앞부분: {xml[:200]}")
+            raise LawNotFound(f"판례 본문 없음 (일련번호 {case_serial}) — 응답 앞부분: {xml[:200]}")
+        d["출처"] = PREC_VIEWER.format(case_serial)
+        if truncated:
+            # 고지가 없으면 LLM이 문장 중간에서 끊긴 판시를 전문으로 착각한다
+            d["잘림"] = (f"길이 제한으로 잘렸습니다: {', '.join(truncated)}. "
+                        "전문이 필요하면 max_chars를 키워 다시 호출하세요.")
         return d
 
     # ---------- 법령해석례 (법제처) ----------
@@ -119,13 +254,18 @@ class LawGoKrClient:
         """target=expc 법령해석례 검색."""
         xml = _get("lawSearch.do", target="expc", query=keyword, display=display, page=page)
         items = _parse_items(xml, "expc")
-        return [{
-            "해석례일련번호": it.get("법령해석례일련번호", it.get("일련번호", "")),
-            "안건명": it.get("안건명", ""),
-            "안건번호": it.get("안건번호", ""),
-            "회신기관": it.get("회신기관명", it.get("질의기관명", "")),
-            "회신일자": it.get("회신일자", ""),
-        } for it in items]
+        rows = []
+        for it in items:
+            seq = it.get("법령해석례일련번호") or it.get("일련번호", "")
+            rows.append({
+                "해석례일련번호": seq,
+                "안건명": it.get("안건명", ""),
+                "안건번호": it.get("안건번호", ""),
+                "회신기관": it.get("회신기관명", it.get("질의기관명", "")),
+                "회신일자": it.get("회신일자", ""),
+                "출처": EXPC_VIEWER.format(seq) if seq else "",
+            })
+        return rows
 
     def get_interpretation(self, serial: str, max_chars: int = 8000):
         xml = _get("lawService.do", target="expc", ID=serial)
@@ -152,12 +292,12 @@ class LawGoKrClient:
         } for it in items]
 
     # ---------- 법령: 연혁(시행본) 목록 ----------
-    def law_history(self, law_name: str, law_id: str = "", max_rows: int = 100):
+    def law_history(self, law_name: str, law_id: str = "", max_rows: int = 500):
         """target=eflaw 연혁 시행본 전체 목록. law_id를 주면 그 본법만 필터
         (예: 부가가치세법=001571 — 같은 이름 하위법령 혼입 방지)."""
         rows = []
         page = 1
-        while len(rows) < max_rows and page <= 5:
+        while len(rows) < max_rows and page <= 10:
             # 페이지 크기 파라미터는 display가 맞음 — numOfRows는 무시되어 20건씩 5왕복하게 됨 (2026-08-18 실측)
             xml = _get("lawSearch.do", target="eflaw", query=law_name, display=100, page=page)
             items = _parse_items(xml, "law")
@@ -176,8 +316,33 @@ class LawGoKrClient:
                     "제개정구분": it.get("제개정구분명", ""),
                 })
             page += 1
-        rows.sort(key=lambda r: r.get("시행일자", ""))
+        # 정렬 키가 시행일자 하나뿐이면, 조문별 단계 시행 때문에 **같은 시행일자에 여러 공포본**이
+        # 있을 때 그 그룹의 가장 오래된 공포본이 선택된다. 실측(2026-09-01): 근로기준법
+        # 시행일자 20070701에 2건이 있어 제24조 조회가 2006.12.21 공포본(구 "근로조건의 명시")을
+        # 반환했다 — 정답은 2007.1.26 공포본(서면 명시·교부 의무 신설).
+        rows.sort(key=lambda r: (r.get("시행일자", ""), r.get("공포일자", ""),
+                                 str(r.get("공포번호", "")).zfill(10)))
         return rows
+
+    _STAGED_RE = re.compile(r"(\d{8})\s*:\s*([^<;]*)")
+
+    def staged_article_dates(self, mst: str) -> dict:
+        """시행본 헤더의 <조문시행일자문자열>을 {조문라벨: 시행일자}로 파싱.
+
+        조문별 단계 시행이 있으면 시행본 XML에는 **아직 시행되지 않은 조문의 문안까지**
+        들어 있다. 조문 블록의 <조문시행일자> 태그는 헤더와 어긋나는 사례가 실측됐으므로
+        (근로기준법 MST 285279 제101조: 태그 20261008 vs 헤더 20261208) 둘 다 본다.
+        """
+        xml = _get("lawService.do", target="law", MST=mst)   # 캐시 히트
+        m = re.search(r"<조문시행일자문자열>(.*?)</조문시행일자문자열>", xml, re.S)
+        if not m:
+            return {}
+        out = {}
+        for date, arts in self._STAGED_RE.findall(_strip_cdata(m.group(1))):
+            for label in re.findall(r"제\d+조(?:의\d+)?", arts):
+                if date > out.get(label, ""):
+                    out[label] = date
+        return out
 
     # ---------- 법령: 특정 시행본의 조문 원문 ----------
     def law_article(self, mst: str, article_no: str, max_chars: int = 6000):
@@ -280,6 +445,7 @@ class LawGoKrClient:
         if not mst:
             if not law_name:
                 raise LawGoKrError("mst 또는 law_name 중 하나는 필요합니다")
+            as_of_date = _norm_date(as_of_date, "as_of_date")
             if as_of_date:
                 history = self.law_history(law_name, law_id=law_id)
                 chosen = None
@@ -513,15 +679,39 @@ class LawGoKrClient:
                           max_chars: int = 6000):
         """as_of_date(YYYYMMDD) 당시 시행 중이던 시행본을 골라 해당 조문 원문 반환.
         예규·판례가 인용한 '당시 조문' 검증용 — 회신일을 넣으면 그 시점 법을 준다."""
+        as_of_date = _norm_date(as_of_date, "as_of_date")
         history = self.law_history(law_name, law_id=law_id)
         if not history:
-            raise LawGoKrError(f"연혁 없음: {law_name}")
-        chosen = None
-        for row in history:  # 시행일자 오름차순
-            if row["시행일자"] and row["시행일자"] <= as_of_date:
-                chosen = row
-        if not chosen:
-            raise LawGoKrError(f"{as_of_date} 이전 시행본 없음 (최초 시행 {history[0]['시행일자']})")
-        art = self.law_article(chosen["MST"], article_no, max_chars)
+            raise LawNotFound(f"연혁 없음: {law_name}")
+        candidates = [r for r in history if r["시행일자"] and r["시행일자"] <= as_of_date]
+        if not candidates:
+            raise LawNotFound(f"{as_of_date} 이전 시행본 없음 (최초 시행 {history[0]['시행일자']})")
+
+        # 조문별 단계 시행: 시행본 시행일자만 보고 고르면 기준일에 **아직 시행되지 않은**
+        # 문안이 나온다. 해당 조문의 실제 시행일이 기준일보다 미래이면 이전 시행본으로 소급한다.
+        label = "제" + article_no.strip().replace("의", "조의") if "의" in article_no else f"제{article_no.strip()}조"
+        skipped = []
+        art = None
+        for row in reversed(candidates[-10:]):
+            try:
+                cand = self.law_article(row["MST"], article_no, max_chars)
+            except LawGoKrError:
+                continue
+            eff = max(str(cand.get("조문시행일자") or ""),
+                      self.staged_article_dates(row["MST"]).get(label, ""))
+            if eff and eff > as_of_date:
+                skipped.append(f"{row['시행일자']}본(해당 조문 시행일 {eff})")
+                continue
+            art, chosen = cand, row
+            break
+
+        if art is None:   # 후보가 전부 미시행이면 가장 이른 것을 주의와 함께 반환
+            chosen = candidates[-1]
+            art = self.law_article(chosen["MST"], article_no, max_chars)
+            art["주의"] = (f"{as_of_date} 시점에 시행 중이던 문안을 특정하지 못했습니다 — "
+                          f"반환된 문안은 그 이후 시행분일 수 있습니다 (검토한 시행본: {', '.join(skipped)}).")
+        elif skipped:
+            art["주의"] = (f"{as_of_date} 당시 아직 시행되지 않은 문안을 건너뛰고 소급 선택했습니다 "
+                          f"(건너뜀: {', '.join(skipped)}).")
         art["적용시행본"] = {k: chosen[k] for k in ("법령명", "시행일자", "공포일자", "공포번호", "제개정구분", "MST")}
         return art

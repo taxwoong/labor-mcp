@@ -31,11 +31,17 @@ import re
 from law_go_kr import (
     LawGoKrClient,
     LawGoKrError,
+    LawInvalidInput,
+    LawNotFound,
     _get,
+    _norm_date,
     _parse_items,
     _strip_cdata,
     _strip_tags,
+    status_of as _status_of,
 )
+
+_DISPLAY_MAX = 100   # law.go.kr이 조용히 절삭하는 상한 (실측)
 
 
 class MoelExpcClient:
@@ -59,8 +65,15 @@ class MoelExpcClient:
           해석기관, (질의기관)}]} — 해석일자는 "YYYY.MM.DD" 표기이며 빈값인 건도 있음.
         """
         if not keyword.strip():
-            raise LawGoKrError("검색어(keyword)가 비어 있습니다")
-        params = dict(target="moelCgmExpc", query=keyword, display=display, page=page,
+            raise LawInvalidInput("검색어(keyword)가 비어 있습니다")
+        # 형식이 어긋난 날짜를 그대로 조립하면 explYd 필터가 통째로 무시된 채 전 기간
+        # 결과가 나가고, 사용자는 필터가 걸린 줄 안다 (2026-09-01 실측: 181건 vs 26건)
+        date_from = _norm_date(date_from, "date_from")
+        date_to = _norm_date(date_to, "date_to")
+        if not isinstance(page, int) or isinstance(page, bool) or page < 1:
+            raise LawInvalidInput(f"page는 1 이상의 정수여야 합니다: {page!r}")
+        capped = min(int(display), _DISPLAY_MAX)
+        params = dict(target="moelCgmExpc", query=keyword, display=capped, page=page,
                       search=2 if search_body else 1)
         if date_from or date_to:
             params["explYd"] = f"{date_from or '19450815'}~{date_to or '20991231'}"
@@ -81,10 +94,22 @@ class MoelExpcClient:
             if it.get("질의기관명"):
                 row["질의기관"] = it["질의기관명"]
             rows.append(row)
-        return {
-            "total": int(total.group(1)) if total else len(rows),
-            "items": rows,
-        }
+        n = int(total.group(1)) if total else len(rows)
+        out = {"total": n, "items": rows}
+        notices = []
+        if capped < int(display):
+            notices.append(f"display는 law.go.kr 상한 {_DISPLAY_MAX}건으로 줄여 조회했습니다 "
+                           f"(요청 {display}건).")
+        if n and not rows:
+            pages = max(1, -(-n // capped))
+            notices.append(f"요청한 page={page}가 범위를 벗어났습니다 (총 {n}건 / 약 {pages}페이지). "
+                           "결과가 없다는 뜻이 아닙니다 — page를 낮춰 다시 조회하세요.")
+        elif n == 0:
+            notices.append(f"'{keyword}' 검색 결과가 없습니다 (검색은 정상 수행됨). "
+                           "검색어를 짧게 바꾸거나 기간 필터를 넓혀 보세요.")
+        if notices:
+            out["안내"] = " / ".join(notices)
+        return out
 
     # ---------- 본문 조회 ----------
     def get(self, serial: str, max_chars: int = 8000):
@@ -119,7 +144,7 @@ class MoelExpcClient:
                 d[key] = val if tag in long_tags else val[:2000]
         if "질의요지" not in d and "회답" not in d:
             # 없는 ID면 <Law>일치하는 고용노동부 법령해석이 없습니다…</Law>가 온다 (실측)
-            raise LawGoKrError(
+            raise LawNotFound(
                 f"행정해석 본문 없음 (일련번호 {serial}) — 응답 앞부분: {_strip_tags(xml)[:200].strip()}")
         return d
 
@@ -130,17 +155,39 @@ class MoelExpcClient:
         반환: {"고용노동부_행정해석": [search()의 items],
               "고용노동부_행정해석_총건수": int,
               "법제처_법령해석례": [{해석례일련번호, 안건명, 안건번호, 회신기관, 회신일자}]}
-        한쪽 소스가 실패해도 다른 쪽 결과는 반환하고, 실패 사유를 "…_오류" 키로 남긴다.
+        한쪽 소스가 실패하면 다른 쪽 결과는 반환하되 "조회상태"로 부분 실패를 알린다.
+        **양쪽 다 실패하면 예외를 던진다** — 빈 배열로 반환하면 LLM이 "해당 행정해석이
+        없다"고 단정하기 때문이다 (2026-09-01 리뷰: 타임아웃이 0건으로 둔갑).
         """
         out = {"고용노동부_행정해석": [], "법제처_법령해석례": []}
+        상태 = {}
+        errs = {}
         try:
             moel = self.search(keyword, display=display)
             out["고용노동부_행정해석"] = moel["items"]
             out["고용노동부_행정해석_총건수"] = moel["total"]
+            상태["고용노동부"] = "OK" if moel["total"] else "NOT_FOUND"
         except Exception as e:
-            out["고용노동부_행정해석_오류"] = str(e)
+            상태["고용노동부"] = _status_of(e)
+            errs["고용노동부"] = e
+            out["고용노동부_행정해석_오류"] = f"{type(e).__name__}: {e}"
         try:
-            out["법제처_법령해석례"] = self._law.search_interpretations(keyword, display=display)
+            rows = self._law.search_interpretations(keyword, display=display)
+            out["법제처_법령해석례"] = rows
+            상태["법제처"] = "OK" if rows else "NOT_FOUND"
         except Exception as e:
-            out["법제처_법령해석례_오류"] = str(e)
+            상태["법제처"] = _status_of(e)
+            errs["법제처"] = e
+            out["법제처_법령해석례_오류"] = f"{type(e).__name__}: {e}"
+
+        if len(errs) == 2:   # 양쪽 다 실패 — 부존재로 오해되지 않도록 예외로 올린다
+            raise errs.get("고용노동부", errs["법제처"])
+
+        out["조회상태"] = 상태
+        if errs:
+            죽은쪽 = ", ".join(errs)
+            out["안내"] = (
+                f"{죽은쪽} 조회에 실패했습니다 — 그쪽 결과가 비어 있는 것은 "
+                "**자료가 없다는 뜻이 아닙니다**. 사용자에게 일부 소스 조회 실패를 알리고, "
+                "부존재로 단정하지 마세요.")
         return out

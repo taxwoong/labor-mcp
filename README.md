@@ -7,11 +7,51 @@
 (법령·판례·행정해석·판정례 근거) ④임금대장 분석(최저임금·통상/평균임금·주52시간·
 가산수당·기재사항) ⑤급여테이블 역산 설계
 
-설계·리서치 배경은 `개발계획.md`, 원자료는 `research/` 참고.
-자매 프로젝트: [nts-mcp-server](../nts-mcp-server) (국세·지방세) — law.go.kr
-클라이언트(`law_go_kr.py`)와 인증(OC 키·IP 화이트리스트)을 공유합니다.
+설계·리서치 배경은 [개발계획.md](개발계획.md), 버전별 변경 내용은
+[CHANGELOG.md](CHANGELOG.md), 원자료는 `research/` 참고.
+자매 프로젝트: [nts-tax-mcp](https://github.com/taxwoong/nts-tax-mcp) (국세·지방세) —
+law.go.kr 클라이언트(`law_go_kr.py`)와 인증(OC 키·IP 화이트리스트)을 공유합니다.
 
-## 도구 15종
+![Python](https://img.shields.io/badge/python-3.10%2B-blue)
+![MCP](https://img.shields.io/badge/MCP-streamable--http-black)
+![tools](https://img.shields.io/badge/tools-17-brightgreen)
+![status](https://img.shields.io/badge/version-v1.1-informational)
+![license](https://img.shields.io/badge/license-MIT-green)
+
+```bash
+git clone https://github.com/taxwoong/labor-mcp.git
+cd labor-mcp
+pip install -r requirements.txt
+python server.py              # http://127.0.0.1:8735/mcp (PORT·HOST 환경변수)
+```
+
+그다음 claude.ai → 설정 → 커넥터 → **사용자 지정 커넥터 추가**에 위 `/mcp` 주소를
+넣으면 됩니다 ([자세히](#배포-서버컴퓨터--tailscale-funnel)).
+
+> **셀프호스팅 전용입니다.** 공개된 공용 서버는 운영하지 않습니다 — 인증이 없는
+> 엔드포인트라 주소를 공개하지 않습니다. 직접 띄워서 쓰세요.
+>
+> **law.go.kr 기반 검색 3종**(`labor_law_article`·`moel_interpretation_search`·
+> `labor_case_search`)**을 쓰려면 `LAW_API_OC`가 필요합니다.**
+> [open.law.go.kr](https://open.law.go.kr)에서 무료로 발급받는 기관코드이며, **등록한
+> IP에서만** 동작하므로 서버의 공인 IP를 사전 등록해야 합니다. 키가 없어도 나머지 12종
+> (계산 8·분석 2·리소스 열람 1 + 노동위원회 판정례 `nlrc_decision_search`)은 그대로
+> 동작합니다 — 키 미설정 시 해당 3종만 오류를 반환합니다.
+
+## 도구 17종
+
+모든 도구 응답에는 **`status` 필드**가 있습니다 — 원천 장애를 "자료 없음"과 구분하기 위한
+계약입니다. `안내` 필드가 함께 오면 그 지시를 따르세요.
+
+| status | 뜻 | 부존재로 판단해도 되나 |
+|---|---|---|
+| `OK` | 정상 | — |
+| `NOT_FOUND` | 검색은 성공, 결과 0건 | **예** |
+| `UPSTREAM_ERROR` | 원천 사이트 접근 실패 | 아니오 |
+| `PARSE_ERROR` | 사이트 개편 등으로 해석 실패 | 아니오 |
+| `AUTH_ERROR` | `LAW_API_OC`·IP 등록 문제 | 아니오 (서버 관리자 확인) |
+| `INVALID_INPUT` | 입력 형식 오류 | 아니오 |
+
 
 ### 검색 4종 (실데이터 소스, 전부 실측 검증)
 
@@ -31,6 +71,13 @@
 `calc_wage_cut_limit`(감급 한도 §95)
 
 모든 계산 결과는 `{결과, 계산과정, 근거, 주의사항}` 4필드 규약.
+
+### 검증·상태 2종 (v1.1 신규)
+
+| 도구 | 용도 |
+|---|---|
+| `verify_citations` | 인용한 문서번호(판례·행정해석·법령해석례·노동위 판정례)의 실존 여부를 일괄 검증 — 표기로 자료원을 자동 라우팅하고 **확인 / 미확인(유사후보 제시) / 판단불가(원천 장애)** 3값으로 답한다. 호출당 최대 10건 |
+| `check_sources_health` | 자료원 4곳의 응답 상태·소요시간 점검 — "내 서버 문제인지 원천 사이트 문제인지"를 먼저 가른다 |
 
 ### 분석·설계 2종 + 리소스 열람 1종
 
@@ -60,7 +107,7 @@
 pip install -r requirements.txt          # mcp[cli]<2.0 고정 (2.0에서 FastMCP 제거됨)
 run_server.bat                           # PORT=8735, local_env.bat에서 LAW_API_OC 로드
 python test_mcp_client.py                # 5단계 스모크 테스트 (초기화→도구목록→리소스→계산→실호출)
-python -m pytest tests -q               # 단위 테스트 (오프라인만: -m "not live")
+python -m pytest tests -q               # 166건 (오프라인만: -m "not live")
 ```
 
 - `local_env.bat`(미커밋): `set LAW_API_OC=본인_기관코드` 한 줄. nts-mcp-server와
@@ -111,7 +158,7 @@ claude.ai → 설정 → 커넥터 → 사용자 지정 커넥터 추가 → 위
 
 ```
 labor-mcp/
-├── server.py             # MCP 서버 본체 (FastMCP) — 도구 15 + 리소스 11 + 프롬프트 2
+├── server.py             # MCP 서버 본체 (FastMCP) — 도구 17 + 리소스 11 + 프롬프트 2
 ├── law_go_kr.py          # law.go.kr Open API 클라이언트 (nts-mcp-server에서 이식)
 ├── moel_expc.py          # 고용노동부 행정해석(moelCgmExpc) 클라이언트
 ├── nlrc.py               # 노동위원회 판정례 스크래퍼 (non-www 필수 — www는 POST 본문 유실)
@@ -119,10 +166,13 @@ labor-mcp/
 ├── payroll.py            # 임금대장 분석기 + 급여테이블 설계기
 ├── labor_constants.py    # 연도별 파라미터(최저임금·산입비율)·법령ID — 매년 갱신 지점
 ├── resources/            # 지식 리소스 11종 (체크리스트·판정표·표준 서식)
-├── tests/                # pytest 105건 (계산기 51 + 임금대장 34 + nlrc 20)
+├── tests/                # pytest 166건 (오프라인 155 + 실호출 11)
 ├── research/             # 리서치 원자료 (표준취업규칙 hwp, nlrc 응답 샘플 등)
 ├── test_mcp_client.py    # 커넥터 우회 독립 점검 (5단계)
 ├── run_server.bat        # 상시 구동용 (ASCII+CRLF 유지 — 위 주의사항)
+├── setup_task_and_funnel.ps1  # 작업 스케줄러 등록 + Funnel 노출 (관리자)
+├── CHANGELOG.md          # 버전별 변경 내용
+├── .github/ISSUE_TEMPLATE/    # 버그·계산 이의·기능 제안·질문 템플릿
 └── local_env.bat         # (미커밋) LAW_API_OC
 ```
 
@@ -135,10 +185,50 @@ labor-mcp/
 | 수시 | `resources/시행중_개정법_기준선.md`의 "추진 중" 항목(정년연장·주4.5일제·5인 미만 확대·포괄임금 금지) 입법 통과 여부 |
 | 장애 시 | nlrc.go.kr·moel.go.kr 화면 개편 → `tests/test_nlrc.py` 픽스처 교체 후 파서 보수 |
 
-## 유의사항
+## 알려진 제한 사항
 
-- 검토·계산 결과는 참고용 — 최종 판단은 공인노무사 확인 필요 (서버 instructions와
-  프롬프트에 명시됨). 사무소 내부용을 넘어 제3자 유료 자문으로 외부화할 경우
-  공인노무사법(제2조·제27조) 검토 선행.
-- 고용노동부 행정해석(moelCgmExpc)은 2026-07 해석까지 수록 확인 — 갱신 주기는
-  미확인이므로 최신 쟁점은 판례·노동위 판정례로 교차 확인 권장.
+- **검토·계산 결과는 참고용입니다 — 최종 판단은 공인노무사 확인이 필요합니다**
+  (서버 instructions와 프롬프트에도 명시되어 있습니다).
+- **`LAW_API_OC`는 등록한 IP에서만 동작합니다.** 서버를 옮기면 open.law.go.kr에 새
+  공인 IP를 다시 등록해야 하고, 그전까지 law.go.kr 기반 검색 3종이 실패합니다.
+- **노동위원회 판정례는 스크래핑입니다.** nlrc.go.kr 화면이 개편되면 파싱이 깨질 수
+  있습니다. v1.1부터 파서 생존을 3단으로 판정해(결과 영역 소실 / 총건수는 있는데 목록 0건 /
+  필수 필드 공백률 초과) 개편은 `PARSE_ERROR`로, 진짜 0건은 `NOT_FOUND`로 구분합니다.
+  다만 **개편을 완전히 막을 수는 없으므로** 중요한 판단에는 원천 사이트 교차 확인을 권합니다.
+- **고용노동부 행정해석(moelCgmExpc)은 2026-07 해석까지 수록**을 확인했습니다. 갱신
+  주기는 미확인이므로 최신 쟁점은 판례·노동위 판정례로 교차 확인하세요.
+- **연도별 수치는 등록된 연도만 계산됩니다.** 최저임금 등 미등록 연도를 넣으면 옛 수치로
+  조용히 계산하지 않고 명시적 오류를 냅니다 — 매년 갱신이 필요합니다(위 체크리스트).
+- **`analyze_payroll`은 대규모 대장에서 적법 건의 상세를 접습니다** (응답 6만 자 초과 시).
+  접힌 사실은 `잘림` 필드로 알리며, 특정 직원의 전체 상세가 필요하면 그 직원만 넣어 다시
+  호출하세요. 표준취업규칙 같은 큰 리소스는 `labor_resource(..., chapter="3")`으로 장 단위
+  조회를 권합니다(전문은 약 6만 자).
+- **계산은 입력한 수치를 그대로 씁니다.** 임금항목이 통상임금·최저임금에 산입되는지의
+  성격 판단은 `resources/임금항목_산입매트릭스.md` 기준을 따르되, 실제 지급 실태(고정성·
+  일률성)에 따라 달라질 수 있습니다.
+- **취업규칙·근로계약서 검토는 텍스트 대조 기반**입니다. 문서를 붙여 넣어야 하며,
+  hwp·pdf 원문 파싱은 이 서버가 하지 않습니다.
+- **사무소 내부용 도구입니다.** 제3자 유료 자문으로 외부화할 경우 공인노무사법
+  (제2조·제27조) 검토가 선행되어야 합니다.
+
+## 문제가 생겼을 때
+
+1. **서버 자체 점검** — `python test_mcp_client.py --url <내-서버>/mcp`
+   (초기화→도구 목록→리소스→계산→실호출 5단계). 전부 성공하면 서버 문제가 아닙니다.
+2. **키·네트워크 점검** — law.go.kr 도구만 실패하면 `LAW_API_OC` 미설정이거나 IP 미등록입니다.
+   노동위 판정례만 실패하면 nlrc.go.kr 접속·화면 개편을 의심하세요.
+3. **커넥터 등록 오류**는 위 [커넥터 등록 시 "로그인 서비스에 등록할 수 없습니다"](#커넥터-등록-시-로그인-서비스에-등록할-수-없습니다oauth-오류가-뜨면) 참고.
+4. **그래도 막히면 이슈로 알려주세요** — [버그 신고 / 계산 결과 이의 / 기능 제안 / 사용
+   질문](https://github.com/taxwoong/labor-mcp/issues/new/choose) 템플릿이 있습니다.
+   계산 금액이 실무와 다른 경우에는 **[계산 결과 이의]** 템플릿에 입력값과 근거 조문·
+   판례 문서번호를 함께 적어주시면 원인이 바로 가려집니다.
+
+## 변경 이력
+
+버전별 변경 내용은 [CHANGELOG.md](CHANGELOG.md)를 참고하세요. 현재 **v1.1** (2026-09-01)
+— 오류 응답 계약(`status`) 도입과 계산 오답 13건 수정.
+
+## 라이선스
+
+[MIT](LICENSE). 이 서버의 계산·검토 결과는 참고 자료이며, 법적 판단이나 노무 자문을
+대체하지 않습니다. 사용에 따른 책임은 사용자에게 있습니다.

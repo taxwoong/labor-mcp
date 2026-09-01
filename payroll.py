@@ -75,6 +75,49 @@ def _add_months(d: date, n: int) -> date:
     return date(y, m + 1, min(d.day, calendar.monthrange(y, m + 1)[1]))
 
 
+_MAX_RESPONSE_CHARS = 60_000    # 이 크기를 넘으면 적법 건의 상세를 접는다
+_SANE_MAX_WAGE = 1_000_000_000  # 월 임금 10억 초과 — 자릿수 오류 의심
+_SANE_MAX_HOURS = 744           # 월 시간 상한(31일×24h)
+
+
+def _num(v, field, *, allow_none=True, allow_negative=False):
+    """엑셀에서 온 값을 숫자로 정규화한다.
+
+    임금대장 변환에서 "2,500,000"·None·"₩2500000" 같은 값이 그대로 들어오면
+    예전에는 TypeError/ValueError로 도구 자체가 죽었다 (2026-09-01 리뷰).
+    """
+    if v is None or v == "":
+        if allow_none:
+            return None
+        raise ValueError(f"{field}이(가) 비어 있습니다.")
+    if isinstance(v, bool):
+        raise ValueError(f"{field}에 참/거짓 값({v!r})은 넣을 수 없습니다.")
+    if isinstance(v, (int, float)):
+        n = float(v)
+    else:
+        t = str(v).strip().replace(",", "").replace("원", "").replace("₩", "").replace(" ", "")
+        try:
+            n = float(t)
+        except ValueError:
+            raise ValueError(
+                f"{field}의 값 {v!r}을 숫자로 읽을 수 없습니다 — 콤마·통화기호는 자동으로 "
+                "제거하지만 그 외 문자는 넣지 마세요.")
+    if not allow_negative and n < 0:
+        raise ValueError(
+            f"{field}에 음수({v!r})가 들어왔습니다 — 공제 항목이라면 임금항목이 아니라 "
+            "공제내역으로 분리해 주세요.")
+    return n
+
+
+def _slim_entry(e):
+    """적법 건의 상세에서 목록형 필드를 접는다(요지·수치는 남긴다)."""
+    d = e["상세"]
+    e["상세"] = {k: v for k, v in d.items()
+                if k == "요지" or not isinstance(v, (list, dict))}
+    e["상세"]["_상세생략"] = "적법 건이라 계산과정·근거·주의사항을 접었습니다."
+    return e
+
+
 def _entry(ym, check, verdict, 요지, steps=None, basis=None, cautions=None, **extra) -> dict:
     상세 = {"요지": 요지, "계산과정": steps or [], "근거": basis or [],
            "주의사항": cautions or []}
@@ -86,15 +129,24 @@ def _entry(ym, check, verdict, 요지, steps=None, basis=None, cautions=None, **
 # 검사 ① 최저임금
 # ---------------------------------------------------------------------------
 
-def _check_min_wage(ym, year, items, weekly, probation_flag, c1yr, simple, hire_d):
+def _check_min_wage(ym, year, items, weekly, probation_flag, c1yr, simple, hire_d,
+                    quit_d=None):
     cautions = []
     eff = False
+    partial = None       # 월 단위 비교의 전제(만근)가 깨지는 사유
+    first, last = _first_day(ym), _last_day(ym)
+    # 입·퇴사 월은 임금이 일할 지급되는데 분모는 209시간 그대로라 **허위 미달**이 난다
+    # (2026-09-01 실측: 3/20 입사자 한 명으로 총부족액 125만원 + 상습체불 경고).
+    if hire_d and first <= hire_d <= last:
+        partial = f"{hire_d.isoformat()} 입사 — 이 달은 부분 재직(일할 지급 추정)"
+    elif quit_d and first <= quit_d <= last:
+        partial = f"{quit_d.isoformat()} 퇴사 — 이 달은 부분 재직(일할 지급 추정)"
     if probation_flag and hire_d is not None:
         prob_end = _add_months(hire_d, 3)
         eff = _first_day(ym) < prob_end
         if eff and prob_end <= _last_day(ym):
-            cautions.append(f"수습 3개월이 {prob_end.isoformat()}에 만료 — 이 달은 감액·정상 "
-                            "구간이 섞여 월 단위 판정은 근사치.")
+            partial = partial or (f"수습 3개월이 {prob_end.isoformat()}에 만료 — 이 달은 "
+                                  "감액 구간과 정상 구간이 섞여 월 단위 비교가 성립하지 않음")
     try:
         r = calc.check_minimum_wage(items, weekly, year, probation=eff,
                                     contract_1yr_plus=c1yr, simple_labor=simple)
@@ -103,12 +155,26 @@ def _check_min_wage(ym, year, items, weekly, probation_flag, c1yr, simple, hire_
         return _entry(ym, "최저임금", "불확실",
                       f"{year}년 최저임금 파라미터 미등록 — 판정 불가", cautions=[str(e)])
     res = r["결과"]
-    violation = res["위반여부"]
+    판정 = res.get("판정") or ("위반" if res["위반여부"] else "적법")
+    if not items:
+        return _entry(ym, "최저임금", "불확실",
+                      "임금항목이 대장에 없어 비교시급을 산출할 수 없음",
+                      basis=["최저임금법 §6 — 산입범위·비교 방법"],
+                      cautions=["임금항목(기본급·수당 내역)이 있어야 최저임금 비교가 "
+                                "가능합니다 — 대장 원본을 확인하세요."],
+                      부족액=0)
+    violation = 판정 == "위반"
     요지 = (f"비교시급 {_fmt(res['비교시급'])}원 vs 적용 최저시급 "
            f"{_fmt(res['적용최저시급'])}원 — {'미달' if violation else '충족'}")
-    return _entry(ym, "최저임금", "위반" if violation else "적법", 요지,
+    if partial:
+        판정 = "불확실"
+        violation = False
+        요지 += f" (단, {partial} → 월 단위 비교 부적절)"
+        cautions.append(f"{partial}. 월 소정근로시간 기준 비교시급은 이 달에 성립하지 "
+                        "않습니다 — 실제 재직일수·소정근로시간으로 재계산하세요.")
+    return _entry(ym, "최저임금", 판정, 요지,
                   steps=r["계산과정"], basis=r["근거"], cautions=r["주의사항"] + cautions,
-                  부족액=res["월부족액"], 비교시급=res["비교시급"],
+                  부족액=res["월부족액"] if violation else 0, 비교시급=res["비교시급"],
                   적용최저시급=res["적용최저시급"], 수습감액적용=res["수습감액적용"],
                   산입내역=res["산입내역"])
 
@@ -127,7 +193,13 @@ def _check_ordinary(ym, year, items, weekly):
               for it in items]
     uncertain = res["불확실항목"]
     verdict = "불확실" if uncertain else "적법"
+    자료부재 = not items or float(res["월통상임금"] or 0) <= 0
+    if 자료부재:
+        # '적법'으로 내보내면 깨끗한 검사 1건으로 집계되어 문제를 덮는다
+        verdict = "불확실"
     요지 = f"월 통상임금 {_fmt(res['월통상임금'])}원, 통상시급 {_fmt(res['통상시급'])}원"
+    if 자료부재:
+        요지 += " — 통상임금성 임금항목이 없어 산정 불가"
     if uncertain:
         요지 += f" — 불확실 항목({', '.join(uncertain)}) 제외 산정"
     entry = _entry(ym, "통상임금", verdict, 요지,
@@ -174,6 +246,9 @@ def _check_52h(ym, mon, weekly, under5, guard, flex):
     steps = [f"월 연장 {_fmt(float(ot))}시간 ÷ {lc.AVG_WEEKS_PER_MONTH:.3f}주 "
              f"= 주 평균 연장 {weekly_avg:.1f}시간 (한도 주 {lc.MAX_WEEKLY_OVERTIME}시간)"]
     basis = ["근로기준법 §53① — 합의 연장 주 12시간 한도"]
+    if flex and flex != "없음":
+        basis.append("근로기준법 §51~§52 — 탄력적·선택적 근로시간제는 단위기간 평균으로 "
+                     "판단하므로 주 단위 한도 비교가 그대로 적용되지 않음")
     if ot > monthly_limit + 1e-9:
         return _entry(ym, "주52시간", "불확실",
                       f"월 연장 {_fmt(float(ot))}시간 → 주 평균 {weekly_avg:.1f}시간으로 한도 초과 추정 "
@@ -181,12 +256,14 @@ def _check_52h(ym, mon, weekly, under5, guard, flex):
                       steps=steps, basis=basis,
                       cautions=["주별 근로시간 데이터가 없어 추정 판정 — §53① 위반이 강하게 "
                                 "의심되므로 주별 기록으로 확정할 것."])
-    return _entry(ym, "주52시간", "적법",
+    # 월 합계로는 "4주에 13시간씩 몰아 쓴 52시간"(주 단위 위반)을 구분할 수 없다.
+    # 한도 이내여도 '적법'으로 확정하지 않고 불확실로 둔다.
+    return _entry(ym, "주52시간", "불확실",
                   f"월 연장 {_fmt(float(ot))}시간 (주 평균 {weekly_avg:.1f}시간 ≤ 한도) — "
-                  "주별 데이터 없어 특정 주 초과 여부는 확인 불가",
+                  "주별 데이터가 없어 특정 주 초과 여부를 확인할 수 없음",
                   steps=steps, basis=basis,
-                  cautions=["월 합계 기준 추정 — 특정 주에 몰아서 근로했다면 초과 가능성이 "
-                            "남으므로 주별 기록 확인 권장."])
+                  cautions=["월 합계 기준 추정입니다 — 특정 주에 몰아서 근로했다면 §53① "
+                            "위반일 수 있으므로 주별 기록으로 확정하세요."])
 
 
 # ---------------------------------------------------------------------------
@@ -196,12 +273,23 @@ def _check_52h(ym, mon, weekly, under5, guard, flex):
 def _check_overtime_paid(ym, mon, items, hourly, n_emp, under5, guard):
     paid = sum(int(it.get("금액", 0)) for it in items if it.get("성격") in _OT_PAY_KINDS)
     if under5:
+        _ot0 = float(mon.get("연장시간") or 0)
+        _hol0 = float(mon.get("휴일시간") or 0)
+        _cau = ["가산은 없지만 실제 근로한 연장·휴일 시간분 임금(100%)은 지급 "
+                "대상 — 기본급·수당에 포함됐는지 별도 확인 필요."]
+        if (_ot0 or _hol0) and paid <= 0 and hourly > 0:
+            시간분 = round(hourly * (_ot0 + _hol0), 2)
+            return _entry(ym, "가산수당", "불확실",
+                          f"상시 {n_emp}인 — §56 가산은 미적용이나, 연장·휴일 "
+                          f"{_ot0 + _hol0}시간분 임금(약 {_fmt(시간분)}원)에 해당하는 "
+                          "지급 항목이 대장에 없음 — 기본급 포함 여부 확인 필요",
+                          basis=["근로기준법 §11·시행령 별표1 — 상시 4인 이하 §56 미적용",
+                                 "근로기준법 §43 — 근로 제공분 임금은 5인 미만도 지급 의무"],
+                          cautions=_cau, 시간분임금추정=시간분, 실지급연장수당류=paid)
         return _entry(ym, "가산수당", "적법",
                       f"상시 {n_emp}인 — §56 미적용, 가산 의무 없음",
                       basis=["근로기준법 §11·시행령 별표1 — 상시 4인 이하 사업장 §56 미적용"],
-                      cautions=["가산은 없지만 실제 근로한 연장·휴일 시간분 임금(100%)은 지급 "
-                                "대상 — 기본급·수당에 포함됐는지 별도 확인 필요."],
-                      실지급연장수당류=paid)
+                      cautions=_cau, 실지급연장수당류=paid)
     ot, night, hol = mon.get("연장시간"), mon.get("야간시간"), mon.get("휴일시간")
     if guard:
         # §63 근로자 — 연장·휴일 가산 미적용, 야간 가산(§56③)만 검증
@@ -209,6 +297,11 @@ def _check_overtime_paid(ym, mon, items, hourly, n_emp, under5, guard):
             return _entry(ym, "가산수당", "불확실",
                           "야간근로시간 기재 없음 — 야간 가산 검증 불가 "
                           "(§63 근로자는 연장·휴일 가산 미적용, 야간 가산만 적용)",
+                          basis=["근로기준법 §63·§56③"])
+        if hourly <= 0:
+            return _entry(ym, "가산수당", "불확실",
+                          "통상시급 산출 불가(통상임금성 임금항목 없음) — 야간 가산 "
+                          "이론치를 계산할 수 없음",
                           basis=["근로기준법 §63·§56③"])
         r = calc.calc_overtime_pay(hourly, 0, float(night), 0, employees=n_emp)
         theo = r["결과"]["합계"]
@@ -227,6 +320,18 @@ def _check_overtime_paid(ym, mon, items, hourly, n_emp, under5, guard):
     if hourly <= 0:
         return _entry(ym, "가산수당", "불확실",
                       "통상시급 산출 불가(통상임금성 임금항목 없음) — 이론치 계산 불가")
+    if ot is None or night is None or hol is None:
+        # 실측: 연장만 기재된 대장에서 야간 30h분 188,285원 체불이 '적법'으로 덮였다
+        기재 = [n for n, v in (("연장", ot), ("야간", night), ("휴일", hol)) if v is not None]
+        누락 = [n for n, v in (("연장", ot), ("야간", night), ("휴일", hol)) if v is None]
+        return _entry(ym, "가산수당", "불확실",
+                      f"{'·'.join(누락)} 근로시간이 기재되지 않아 가산수당 검증 불가 "
+                      f"(기재된 것: {'·'.join(기재) or '없음'})",
+                      basis=["근로기준법 §56 — 연장·야간·휴일 각각 가산",
+                             "근로기준법 시행령 §27①8호 — 연장·야간·휴일 각 시간수 기재 의무"],
+                      cautions=["미기재 항목을 0시간으로 간주하면 실제 체불을 놓칩니다 — "
+                                "대장에서 해당 시간수를 확인한 뒤 다시 분석하세요."],
+                      기재된시간=기재, 미기재시간=누락, 실지급연장수당류=paid)
     ot0, night0, hol0 = float(ot or 0), float(night or 0), float(hol or 0)
     # 휴일은 월 합산 시간이라 calc_overtime_pay의 '8시간 초과 자동 분리'(1일 전제)를 쓰면
     # 과대 추정 → 과잉 위반 판정 위험. 전부 8시간 이내(1.5배) 하한으로 계산한다.
@@ -239,9 +344,6 @@ def _check_overtime_paid(ym, mon, items, hourly, n_emp, under5, guard):
         steps.append(f"휴일수당(월 합산, 8시간 이내 가정) = {_fmt(hol0)}시간 × {_fmt(hourly)} × "
                      f"{hol_mult} = {_fmt(hol_floor)}원")
     cautions = list(r["주의사항"])
-    if (ot is None or night is None or hol is None):
-        cautions.append("일부 시간 필드 미기재(null)는 0시간으로 간주 — 실제 근로가 있었다면 "
-                        "이론치가 과소 추정된다.")
     if hol0 > 8:
         cautions.append("휴일 8시간 초과분(100% 가산)은 일별 데이터가 없어 미반영 — "
                         "이론치는 하한(과소 추정) 기준.")
@@ -266,8 +368,16 @@ def _check_ledger_fields(ym, mon, under5, guard, short_daily):
     hours_exempt = under5 or guard
     if mon.get("총근로시간") is None:
         (lawful if hours_exempt else missing).append("7호(근로시간수)")
-    if mon.get("연장시간") is None and mon.get("야간시간") is None and mon.get("휴일시간") is None:
+    시간필드 = {"연장": mon.get("연장시간"), "야간": mon.get("야간시간"),
+              "휴일": mon.get("휴일시간")}
+    빈필드 = [k for k, v in 시간필드.items() if v is None]
+    부분누락 = None
+    if len(빈필드) == 3:
         (lawful if hours_exempt else missing).append("8호(연장·야간·휴일 시간수)")
+    elif 빈필드 and not hours_exempt:
+        # 시행령 §27①8호는 세 종류를 각각 기재 대상으로 정한다. 다만 "근로가 없어 공란"과
+        # "근로가 있는데 미기재"를 데이터만으로 구분할 수 없어 위반으로 단정하지는 않는다.
+        부분누락 = 빈필드
     if not (mon.get("임금항목") or []):
         missing.append("9호(기본급·수당 내역별 금액)")
 
@@ -279,9 +389,17 @@ def _check_ledger_fields(ym, mon, under5, guard, short_daily):
     if short_daily:
         cautions.append("고용기간 30일 미만 — 2호(생년월일·사원번호 등)·5호(임금 계산기초) "
                         "생략도 적법 (시행령 §27②).")
-    verdict = "위반" if missing else "적법"
-    요지 = ("누락: " + ", ".join(missing)) if missing else \
-        ("기재사항 충족" + (f" (생략 적법: {', '.join(lawful)})" if lawful else ""))
+    if 부분누락:
+        cautions.append(
+            f"8호 중 {'·'.join(부분누락)} 시간수가 공란입니다 — 해당 근로가 없었던 것인지 "
+            "기재를 빠뜨린 것인지 대장 원본에서 확인하세요.")
+    verdict = "위반" if missing else ("불확실" if 부분누락 else "적법")
+    if missing:
+        요지 = "누락: " + ", ".join(missing)
+    elif 부분누락:
+        요지 = "8호 일부 공란: " + "·".join(부분누락)
+    else:
+        요지 = "기재사항 충족" + (f" (생략 적법: {', '.join(lawful)})" if lawful else "")
     return _entry(ym, "기재사항", verdict, 요지,
                   basis=["근로기준법 §48①·시행령 §27 — 임금대장 기재사항 10개 호",
                          "근로기준법 §116② — 위반 시 과태료 500만원 이하"],
@@ -304,9 +422,11 @@ def _check_average_wage(emp, weekly):
         return _entry(None, "평균임금", "불확실",
                       f"퇴직({emp['퇴사일']}) 이전 3개월({needed[0]}~{needed[2]})의 임금 데이터 없음 — 산정 불가")
     days = (사유일 - _first_day(needed[0])).days
-    if 사유일.day != 1:
-        cautions.append("퇴사일이 월 초일이 아님 — 월 단위 임금대장으로는 일할 창구를 정확히 "
-                        "반영할 수 없어 마지막 달 전체 지급액 기준 근사치.")
+    월중퇴사 = 사유일.day != 1
+    if 월중퇴사:
+        cautions.append("퇴사일이 월 초일이 아님 — §2①6호의 산정 창구(사유발생일 이전 3개월)는 "
+                        "월 경계와 어긋나는데 월 단위 대장으로는 양끝 달을 일할 안분할 수 없다. "
+                        "1일 평균임금이 과대·과소 산정될 수 있으므로 퇴직금 확정 전 재계산 필요.")
 
     # 연간 상여·연차수당: 대장에 있는 최근 12개월분 합계 → calc_average_wage가 3/12 산입
     lookback = {_ym_add(m0, -k) for k in range(12)}
@@ -329,7 +449,7 @@ def _check_average_wage(emp, weekly):
                                ordinary_wage_monthly=ow["결과"]["월통상임금"],
                                weekly_hours=weekly)
     res = r["결과"]
-    verdict = "불확실" if missing_yms else "적법"
+    verdict = "불확실" if (missing_yms or 월중퇴사) else "적법"
     if missing_yms:
         cautions.append(f"산정 창구 중 {', '.join(missing_yms)} 데이터 없음 — "
                         f"{len(window_items)}개월분만으로 산정한 근사치.")
@@ -387,29 +507,82 @@ def analyze_payroll(data: dict) -> dict:
         raise ValueError("입력에 '사업장'·'직원' 키가 필요합니다 — "
                          "labor://schema/임금대장-입력 스키마를 따를 것.")
     biz = data["사업장"]
-    n_emp = int(biz.get("상시근로자수", 5))
+    n_raw = biz.get("상시근로자수")
+    n_emp = int(_num(n_raw, "사업장.상시근로자수") or 5)
+    상시근로자수_가정 = n_raw in (None, "")
     flex = biz.get("탄력선택근로제") or "없음"
     under5 = n_emp < lc.FULL_APPLICATION_MIN_EMPLOYEES
+    입력경고 = []
+    if 상시근로자수_가정:
+        # 한국 노동법 최대 분기점을 조용히 가정하면 5인 미만 사업장 전체가 오판된다
+        입력경고.append("사업장.상시근로자수가 없어 5인(=전면 적용)으로 가정했습니다 — "
+                     "실제 4인 이하라면 §56 가산·§60 연차·§50~53 근로시간 한도가 "
+                     "적용되지 않아 결과가 달라집니다.")
 
     직원별 = []
     for emp in data["직원"]:
+        if not isinstance(emp, dict):
+            raise ValueError(f"직원 항목은 객체여야 합니다: {emp!r}")
         hire_d = date.fromisoformat(emp["입사일"]) if emp.get("입사일") else None
         quit_d = date.fromisoformat(emp["퇴사일"]) if emp.get("퇴사일") else None
         short_daily = bool(hire_d and quit_d and (quit_d - hire_d).days < 30)
-        weekly = float(emp.get("주소정근로시간", 40.0))
         probation_flag = bool(emp.get("수습여부", False))
         c1yr = bool(emp.get("계약기간1년이상", False))
         simple = bool(emp.get("단순노무직", False))
         guard = bool(emp.get("감시단속승인", False))
-        months = sorted((m for m in emp.get("월별", []) if m.get("연월")),
-                        key=lambda m: m["연월"])
+        weekly = float(_num(emp.get("주소정근로시간"), "직원.주소정근로시간") or 40.0)
+        raw_months = emp.get("월별") or []
+        _seen, months = set(), []
+        for m in raw_months:
+            if not isinstance(m, dict) or not m.get("연월"):
+                입력경고.append(f"[{emp.get('사원ID') or emp.get('성명') or '?'}] "
+                             "연월이 없는 월별 항목을 건너뜁니다.")
+                continue
+            ym_ = str(m["연월"]).strip().replace("/", "-").replace(".", "-")
+            parts = ym_.split("-")
+            if len(parts) < 2 or not parts[0].isdigit() or not parts[1].isdigit():
+                raise ValueError(f"연월 형식 오류: {m['연월']!r} — 'YYYY-MM' 형식으로 넣으세요.")
+            ym_ = f"{int(parts[0]):04d}-{int(parts[1]):02d}"
+            if ym_ in _seen:
+                입력경고.append(f"[{emp.get('사원ID') or emp.get('성명') or '?'}] "
+                             f"{ym_}이 중복 입력되어 뒤의 것을 무시했습니다 — "
+                             "중복은 위반 건수를 이중 계상시킵니다.")
+                continue
+            _seen.add(ym_)
+            m = dict(m, 연월=ym_)
+            for f in ("연장시간", "야간시간", "휴일시간", "총근로시간", "근로일수"):
+                if f in m:
+                    m[f] = _num(m.get(f), f"{ym_}.{f}")
+                    if m[f] is not None and f.endswith("시간") and m[f] > _SANE_MAX_HOURS:
+                        raise ValueError(f"{ym_}.{f}={m[f]} — 월 {_SANE_MAX_HOURS}시간을 "
+                                         "넘습니다. 자릿수를 확인하세요.")
+            norm_items = []
+            for it in (m.get("임금항목") or []):
+                if not isinstance(it, dict):
+                    raise ValueError(f"{ym_} 임금항목은 객체여야 합니다: {it!r}")
+                amt = _num(it.get("금액"), f"{ym_} 임금항목 '{it.get('명칭', '(무명)')}'.금액")
+                if amt is not None and amt > _SANE_MAX_WAGE:
+                    raise ValueError(
+                        f"{ym_} 임금항목 '{it.get('명칭', '(무명)')}'의 금액 {amt:,.0f}원이 "
+                        "비정상적으로 큽니다 — 원 단위/천원 단위 혼동을 확인하세요.")
+                norm_items.append(dict(it, 금액=int(amt or 0)))
+            m["임금항목"] = norm_items
+            weeks = m.get("주별근로시간")
+            if weeks:
+                m["주별근로시간"] = [float(_num(w, f"{ym_}.주별근로시간") or 0) for w in weeks]
+            months.append(m)
+        months.sort(key=lambda m: m["연월"])
+        if not months:
+            입력경고.append(f"[{emp.get('사원ID') or emp.get('성명') or '?'}] "
+                         "분석할 월별 데이터가 없어 이 직원은 검사되지 않았습니다.")
         entries = []
         for mon in months:
             ym = mon["연월"]
             year = int(ym[:4])
             items = mon.get("임금항목") or []
             entries.append(_check_min_wage(ym, year, items, weekly,
-                                           probation_flag, c1yr, simple, hire_d))
+                                           probation_flag, c1yr, simple, hire_d,
+                                           quit_d))
             ow_entry, hourly = _check_ordinary(ym, year, items, weekly)
             entries.append(ow_entry)
             entries.append(_check_52h(ym, mon, weekly, under5, guard, flex))
@@ -425,7 +598,28 @@ def analyze_payroll(data: dict) -> dict:
                      "월별판정": entries})
 
     요약, 경고 = _summarize(직원별, under5, n_emp)
-    return {"직원별": 직원별, "요약": 요약, "경고": 경고}
+    경고 = 입력경고 + 경고
+    out = {"직원별": 직원별, "요약": 요약, "경고": 경고}
+
+    # 응답 크기 — 직원 20명×12개월이면 예전에는 82만 자가 나가 컨텍스트를 태웠다.
+    # 위반·불확실 건의 상세는 그대로 두고, 적법 건부터 접는다.
+    size = len(repr(out))
+    if size > _MAX_RESPONSE_CHARS:
+        접은건수 = 0
+        for e in 직원별:
+            for t in e["월별판정"]:
+                if t["판정"] == "적법":
+                    _slim_entry(t)
+                    접은건수 += 1
+        out["잘림"] = (f"응답이 커서 적법 판정 {접은건수}건의 계산과정·근거·주의사항을 "
+                     "접었습니다(요지와 수치는 유지). 위반·불확실 건의 상세는 그대로입니다. "
+                     "특정 직원의 전체 상세가 필요하면 그 직원만 넣어 다시 호출하세요.")
+        if len(repr(out)) > _MAX_RESPONSE_CHARS * 2:
+            for e in 직원별:
+                e["월별판정"] = [t for t in e["월별판정"] if t["판정"] != "적법"]
+            out["잘림"] += (" 그래도 커서 적법 건은 목록에서 제외했습니다 — "
+                          "요약.총검사건수와 건수 집계는 전체 기준입니다.")
+    return out
 
 
 def _summarize(직원별, under5, n_emp):
@@ -433,33 +627,66 @@ def _summarize(직원별, under5, n_emp):
     uncertain = 0
     total_checks = 0
     short_total = 0.0
+    short_by_check = {}
     arrears = False
+    arrears_months, arrears_count = 0, 0
+    체불월 = set()
     for e in 직원별:
         for t in e["월별판정"]:
             total_checks += 1
             if t["판정"] == "위반":
                 counts[t["검사항목"]] = counts.get(t["검사항목"], 0) + 1
+                부족 = float(t["상세"].get("부족액") or 0)
                 if t["검사항목"] in _ARREARS_CHECKS:
                     arrears = True
-                short_total += float(t["상세"].get("부족액") or 0)
+                    arrears_count += 1
+                    if t.get("연월"):
+                        체불월.add((e.get("사원ID"), t["연월"]))
+                short_by_check[t["검사항목"]] = short_by_check.get(t["검사항목"], 0.0) + 부족
+                short_total += 부족
             elif t["판정"] == "불확실":
                 uncertain += 1
+    arrears_months = len({ym for _, ym in 체불월})
     요약 = {"직원수": len(직원별), "총검사건수": total_checks,
            "위반건수": counts, "위반합계": sum(counts.values()),
-           "불확실건수": uncertain, "총부족액추정": round(short_total, 2)}
+           "불확실건수": uncertain,
+           "부족액추정": {k: round(v, 2) for k, v in short_by_check.items()},
+           "총부족액추정": round(short_total, 2),
+           "체불월수": arrears_months, "체불건수": arrears_count}
     경고 = []
     if arrears:
-        경고.append("임금체불성 위반(최저임금 미달·가산수당 미지급)이 검출되었습니다 — "
-                   "상습 임금체불 제재(2025-10-23 시행 개정 근로기준법: 반의사불벌 배제, "
-                   "신용제재, 최대 3배 손해배상, 재직자 지연이자)의 대상이 될 수 있습니다.")
+        # 근기법 §43의4① 상습체불사업주 = 직전 1년간 ①3개월분 임금 이상 체불 또는
+        # ②5회 이상 체불 + 총액 3천만원 이상. 위반 1건·80원에도 제재 경고를 띄우면
+        # 경고가 신뢰를 잃는다(2026-09-01 리뷰).
+        상습 = arrears_months >= 3 or (arrears_count >= 5 and short_total >= 30_000_000)
+        if 상습:
+            경고.append(
+                f"체불 의심 월이 {arrears_months}개월·{arrears_count}건, 부족액 합계 "
+                f"{_fmt(round(short_total, 2))}원 — 근로기준법 §43의4①의 상습체불사업주 "
+                "요건(직전 1년 3개월분 이상 체불, 또는 5회 이상+3천만원 이상)에 근접합니다. "
+                "상습 임금체불 제재(2025-10-23 시행: 반의사불벌 배제, 신용제재, 최대 3배 "
+                "손해배상, 재직자 지연이자) 대상 여부를 확인하세요.")
+        else:
+            경고.append(
+                f"임금체불성 위반이 {arrears_count}건({arrears_months}개월), 부족액 합계 "
+                f"{_fmt(round(short_total, 2))}원 검출되었습니다 — 시정이 필요합니다. "
+                "(상습체불 제재 요건인 '3개월분 이상' 또는 '5회 이상+3천만원 이상'에는 "
+                "아직 이르지 않은 규모입니다.)")
     elif counts:
         경고.append("위반 항목이 검출되었습니다 — 근거·계산과정을 확인하고 시정할 것.")
     if under5:
         경고.append(f"상시 {n_emp}인 사업장 — 연차(§60)·가산수당(§56)·근로시간 한도(§50~53) "
                    "등은 적용되지 않아 해당 검사는 미수행 또는 '적법(미적용)' 처리했습니다 "
                    "(근기법 §11·시행령 별표1).")
+    if len(short_by_check) > 1:
+        경고.append("총부족액추정은 검사별 부족액의 단순 합계입니다 — 최저임금 부족분을 "
+                   "메우면 통상시급이 올라 가산수당 이론치도 함께 오르므로 두 금액은 "
+                   "독립이 아닙니다(중복 가능). 검사별 소계는 요약.부족액추정을 보세요.")
     경고.append("분석 결과는 입력된 임금대장 데이터(항목 분류·근로시간 기록)의 정확성에 "
                "종속됩니다 — '불확실' 항목은 원자료·법리 확인이 필요합니다.")
+    경고.append("결과가 이상하면 확인하세요: ① 임금항목의 '성격' 분류가 원본 대장과 맞는가 "
+               "② 주별 근로시간 데이터가 있는가(없으면 주52시간은 추정) "
+               "③ 상시근로자수가 정확한가(5인 미만이면 적용 법조가 달라집니다).")
     return 요약, 경고
 
 
@@ -509,7 +736,28 @@ def design_pay_table(cond: dict) -> dict:
     else:
         mult = {"연장": 1 + lc.OVERTIME_PREMIUM, "야간": lc.NIGHT_PREMIUM,
                 "휴일": 1 + lc.HOLIDAY_PREMIUM_WITHIN_8H}
+    for _n, _v in (("고정연장시간_월", ot_h), ("고정야간시간_월", night_h),
+                   ("고정휴일시간_월", hol_h)):
+        if _v < 0:
+            raise ValueError(f"{_n}에 음수({_v})는 넣을 수 없습니다.")
+    if H <= 0:
+        raise ValueError(f"주소정근로시간이 {weekly!r}이라 월 기준시간이 0입니다 — "
+                         "1 이상의 소정근로시간을 넣으세요.")
     K = mult["연장"] * ot_h + mult["야간"] * night_h + mult["휴일"] * hol_h
+
+    # §53① 연장근로 한도 — 예전에는 월 100시간짜리 고정OT 계약서 문안을 경고 없이
+    # 생성했다(주 평균 23시간, 명백한 §53① 위반 전제). 한도 초과는 반드시 알린다.
+    월연장한도 = lc.MAX_WEEKLY_OVERTIME * lc.AVG_WEEKS_PER_MONTH
+    고정연장합 = ot_h + hol_h
+    한도초과 = 고정연장합 > 월연장한도 + 1e-9
+    if 한도초과:
+        cautions.append(
+            f"고정연장(+휴일) {고정연장합:g}시간/월은 주 평균 "
+            f"{고정연장합 / lc.AVG_WEEKS_PER_MONTH:.1f}시간으로 근로기준법 §53①의 "
+            f"주 12시간(월 약 {월연장한도:.1f}시간) 한도를 넘습니다 — 이 설계를 그대로 "
+            "근로계약에 넣으면 위법한 연장근로를 전제하는 것이 됩니다. "
+            "탄력·선택 근로시간제(§51~52) 도입 또는 시간 축소를 검토하세요.")
+        basis.append("근로기준법 §53① — 당사자 합의로도 1주 12시간을 초과하는 연장근로 불가")
     steps.append(f"월 기준시간(주휴 포함) H = {_fmt(H)}시간 (주 {weekly:g}시간)")
     steps.append(f"고정OT 환산계수 K = 연장 {ot_h:g}h×{mult['연장']:g} + "
                  f"야간 {night_h:g}h×{mult['야간']:g} + 휴일 {hol_h:g}h×{mult['휴일']:g} = {K:g}")
@@ -560,8 +808,16 @@ def design_pay_table(cond: dict) -> dict:
     else:
         if method == "연봉":
             nonmonthly_bonus = b_annual if (bonus and b_period != "매월") else 0
-            T = (amount - nonmonthly_bonus) / 12
+            # 비매월 고정수당(명절수당 등)도 연봉에 포함되므로 함께 차감해야 한다.
+            # 빠뜨리면 연봉환산이 목표를 초과한다(실측: 목표 3,600만 → 3,720만).
+            nonmonthly_allow = sum(
+                int(a.get("금액", 0)) * (12 // _PERIOD_MONTHS[a.get("지급주기", "매월")])
+                for a in allowances
+                if a.get("지급주기", "매월") != "매월"
+                and a.get("지급주기") in _PERIOD_MONTHS)
+            T = (amount - nonmonthly_bonus - nonmonthly_allow) / 12
             steps.append(f"연봉 {_fmt(amount)}원 − 비매월 상여 {_fmt(nonmonthly_bonus)}원 "
+                         f"− 비매월 수당 {_fmt(nonmonthly_allow)}원 "
                          f"→ 월총액 목표 {_fmt(T)}원")
         else:
             T = float(amount)
@@ -662,7 +918,9 @@ def design_pay_table(cond: dict) -> dict:
             "통상시급": round(hourly, 2),
             "월기준시간": H,
         },
-        "검증": {"최저임금판정": "위반" if vres["위반여부"] else "적법", "상세": vres},
+        "검증": {"최저임금판정": vres.get("판정") or ("위반" if vres["위반여부"] else "적법"),
+                "법정한도판정": "위반의심" if 한도초과 else "적합",
+                "상세": vres},
         "계약서_임금조항_문안": 문안,
         "계산과정": steps,
         "근거": basis,

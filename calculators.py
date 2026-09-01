@@ -44,6 +44,14 @@ _NON_CONTRACTUAL_KINDS = frozenset({"연장수당", "야간수당", "휴일수�
 # (최저임금법 §6④3호나목. 2024년부터 매월 지급분 전액 산입)
 _WELFARE_KINDS = frozenset({"식대", "교통비", "가족수당"})
 
+# 입력스키마(labor://schema/임금대장-입력)가 정의한 성격 값. 여기 없는 값이 들어오면
+# 조용히 기본급과 같은 최관대 버킷으로 떨어져 **최저임금 위반이 적법으로 뒤집혔다**
+# (2026-09-01 실측: 성격="상여금"이면 전액 산입, "정기상여"면 부분산입). 이제 '기타'로 강등한다.
+_KNOWN_KINDS = frozenset({
+    "기본급", "정기상여", "식대", "교통비", "직책수당", "가족수당", "기술수당",
+    "성과급", "연장수당", "야간수당", "휴일수당", "연차수당", "기타",
+})
+
 
 def _fmt(x) -> str:
     """계산과정 표시용 금액 포맷."""
@@ -80,15 +88,32 @@ def classify_wage_item(item: dict, year: int) -> dict:
     """
     금액 = int(item.get("금액", 0))
     주기 = item.get("지급주기", "매월")
-    성격 = item.get("성격", "기타")
+    # 성격을 생략했으면 명칭이 그대로 성격인 경우("기본급" 등)만 인정하고, 그 외에는
+    # '기타'(=3축 불확실)로 둔다. 임의 추정은 하지 않는다.
+    성격 = item.get("성격") or ("" if not item.get("명칭") else str(item["명칭"]).strip())
+    if 성격 not in _KNOWN_KINDS and not item.get("성격"):
+        성격 = "기타"
     실비 = bool(item.get("실비변상", False))
+    현물 = bool(item.get("현물") or item.get("통화이외지급") or False)
     최소보장 = int(item.get("최소보장액") or 0)
     근거 = []
+    미지성격 = None
+    if 성격 not in _KNOWN_KINDS:
+        미지성격, 성격 = 성격, "기타"   # 스키마에 없는 값 — 최관대 버킷으로 새는 것을 막는다
+        근거.append(f"성격 '{미지성격}'은 스키마에 없는 값이라 '기타'로 처리 — "
+                   "임의 추정 대신 사용자 확인이 필요합니다 "
+                   "(labor://schema/임금대장-입력 §3-2).")
+    if 주기 not in _PERIOD_MONTHS and 주기 != "일회성":
+        근거.append(f"지급주기 '{주기}'는 스키마에 없는 값입니다 — "
+                   "매월|격월|분기|반기|연간|일회성 중 하나로 넣으세요.")
 
     # --- 축 1: 최저임금 산입 ---
     if 실비:
         mw = "불산입(실비변상 — 임금이 아님)"
         근거.append("최저임금법 시행규칙 §2 — 실비변상적 금품은 최저임금 불산입")
+    elif 현물:
+        mw = "불산입(통화 이외의 것으로 지급 — 현물)"
+        근거.append("최저임금법 §6④3호가목 — 통화 이외의 것으로 지급하는 임금·복리후생비 불산입")
     elif 성격 in _NON_CONTRACTUAL_KINDS:
         mw = "불산입(소정근로 외 임금)"
         근거.append("최저임금법 §6④1호 — 소정근로시간 외 근로에 대한 임금 불산입")
@@ -99,8 +124,17 @@ def classify_wage_item(item: dict, year: int) -> dict:
         mw = f"불산입({주기} 지급 — 매월 1회 이상 정기 지급 아님)"
         근거.append("최저임금법 §6④ — 격월·분기·연간 지급분은 최저임금 불산입")
     elif 성격 == "성과급":
-        mw = "불산입(변동 성과급 — 소정근로의 대가 아님)"
-        근거.append("최저임금법 §6④ — 소정근로 대가가 아닌 변동 성과급 불산입")
+        # 매월 지급 성과급을 일률적으로 불산입하면 **없는 위반을 만들어낸다**(2026-09-01 실측).
+        # 최저임금법 §6④의 불산입 목록(시행규칙 §2)에 성과급은 없고, §6④2호는 "1개월을
+        # 초과하는 기간에 걸친 사유로 산정하는" 것으로 한정된다. 산정 기준기간을 알 수 없으므로
+        # 확정하지 않고 불확실로 둔다.
+        mw = "불확실(매월 지급 성과급 — 산정 기준기간 확인 필요)"
+        근거.append("최저임금법 §6④·시행규칙 §2 — 불산입 목록에 성과급은 없음. 다만 "
+                   "1개월을 초과하는 기간의 실적으로 산정하는 것이면 §6④2호로 불산입")
+    elif 성격 == "기타":
+        mw = "불확실(항목 성격 미상 — 산입 여부 개별 판단 필요)"
+        근거.append("성격 미상 항목은 최저임금 산입 여부를 확정할 수 없음 "
+                   "(labor://table/임금항목-산입매트릭스 — 기타는 3축 모두 불확실)")
     elif 성격 == "정기상여":
         if year <= 2018:
             mw = "불산입(2018년 이전 구법 — 상여금 전면 불산입)"
@@ -169,6 +203,9 @@ def classify_wage_item(item: dict, year: int) -> dict:
     if 실비:
         aw = "제외(실비변상 — 임금성 없음)"
         근거.append("근로기준법 §2①6호 — 평균임금은 '임금'의 총액 기준, 실비변상 제외")
+    elif 성격 == "기타":
+        aw = "불확실(항목 성격 미상 — 임금성 개별 판단 필요)"
+        근거.append("성격 미상 항목은 평균임금 산입 여부도 확정할 수 없음")
     else:
         aw = "포함"
         근거.append("근로기준법 §2①6호 — 근로의 대가로 지급된 임금은 평균임금 산정에 포함")
@@ -347,6 +384,10 @@ def check_minimum_wage(items: list, weekly_hours: float, year: int,
     미등록 연도는 labor_constants.minimum_wage()가 ValueError를 던진다 (조용히
     최신값으로 대체하지 않음 — 갱신 강제).
     """
+    if weekly_hours is None or float(weekly_hours) <= 0:
+        raise ValueError(
+            f"주 소정근로시간(weekly_hours)이 {weekly_hours!r}입니다 — 0 이하로는 비교시급을 "
+            "산출할 수 없습니다. 단시간 근로자라면 실제 소정근로시간을 넣으세요.")
     mw_hourly = lc.minimum_wage(year)
     std_hours = lc.monthly_standard_hours(weekly_hours)
     mw_monthly = mw_hourly * std_hours
@@ -377,6 +418,8 @@ def check_minimum_wage(items: list, weekly_hours: float, year: int,
     full_sum = 0
     bonus_sum = 0        # 매월 지급 정기상여 (부분산입 그룹)
     welfare_sum = 0      # 매월 지급 현금성 복리후생비 (부분산입 그룹)
+    uncertain_sum = 0    # 산입 여부를 확정할 수 없는 항목 (성격 미상·매월 성과급 등)
+    uncertain_names = []
     detail = []
     for item in items:
         명칭 = item.get("명칭", "(무명)")
@@ -386,6 +429,10 @@ def check_minimum_wage(items: list, weekly_hours: float, year: int,
         detail.append({"명칭": 명칭, "금액": 금액, "판정": 판정})
         if 판정 == "산입":
             full_sum += 금액
+        elif 판정.startswith("불확실"):
+            uncertain_sum += 금액
+            uncertain_names.append(f"{명칭}({_fmt(금액)}원)")
+            steps.append(f"{명칭} {_fmt(금액)}원: {판정}")
         elif 판정.startswith("부분산입"):
             if item.get("성격") == "정기상여":
                 bonus_sum += 금액
@@ -412,19 +459,39 @@ def check_minimum_wage(items: list, weekly_hours: float, year: int,
                          f"{_fmt(welfare_in)}원 산입")
 
     total_in = full_sum + bonus_in + welfare_in
+    total_in_max = total_in + uncertain_sum      # 불확실 항목이 모두 산입된다고 볼 때
     compare_hourly = total_in / std_hours if std_hours else 0.0
+    compare_hourly_max = total_in_max / std_hours if std_hours else 0.0
     steps.append(f"전액 산입분 {_fmt(full_sum)}원 → 산입액 합계 {_fmt(total_in)}원")
     steps.append(f"비교시급 = {_fmt(total_in)} ÷ {std_hours}시간 = {compare_hourly:,.2f}원")
     steps.append(f"적용 최저시급 {applied_hourly:,.1f}원과 비교 "
                  f"(고시 최저시급 {_fmt(mw_hourly)}원, 월 환산 {_fmt(mw_monthly)}원)")
 
-    violation = compare_hourly < applied_hourly - 1e-9
-    shortfall = round(applied_hourly * std_hours - total_in, 2) if violation else 0
+    # 3단계 판정 — 불확실 항목이 있으면 최악/최선을 모두 계산해, 어느 쪽이든 결론이
+    # 같을 때만 확정한다. 결론이 갈리면 '불확실'로 두고 사용자 확인을 요구한다.
+    floor = applied_hourly - 1e-9
+    if compare_hourly_max < floor:
+        판정 = "위반"
+    elif compare_hourly >= floor:
+        판정 = "적법"
+    else:
+        판정 = "불확실"
+    violation = 판정 == "위반"
+    shortfall = round(applied_hourly * std_hours - total_in_max, 2) if violation else 0
+    if uncertain_sum:
+        steps.append(f"산입 여부 불확실 {_fmt(uncertain_sum)}원 "
+                     f"({', '.join(uncertain_names)}) → 산입 시 비교시급 "
+                     f"{compare_hourly_max:,.2f}원")
+        주의.append(f"산입 여부가 불확실한 항목이 {_fmt(uncertain_sum)}원 있습니다 — "
+                   "해당 항목의 성격·산정 기준기간을 확인해야 판정이 확정됩니다.")
     if violation:
         steps.append(f"위반 — 월 부족액 = {applied_hourly:,.1f} × {std_hours} − "
-                     f"{_fmt(total_in)} = {_fmt(shortfall)}원")
+                     f"{_fmt(total_in_max)} = {_fmt(shortfall)}원")
         주의.append("최저임금 미달 부분은 무효이며 최저임금액과 동일한 임금 지급을 약정한 "
                    "것으로 본다 (최저임금법 §6③).")
+    elif 판정 == "불확실":
+        주의.append("불확실 항목을 산입하면 적법, 불산입하면 위반이 됩니다 — "
+                   "항목 성격 확정 전에는 어느 쪽으로도 단정하지 마세요.")
 
     근거.append(f"최저임금 고시 — {year}년 시급 {_fmt(mw_hourly)}원")
     근거.append("최저임금법 §6 — 산입범위·비교 방법")
@@ -441,7 +508,11 @@ def check_minimum_wage(items: list, weekly_hours: float, year: int,
             "정기상여_산입액": round(bonus_in, 2),
             "복리후생_산입액": round(welfare_in, 2),
             "산입액합계": round(total_in, 2),
+            "불확실산입액": round(uncertain_sum, 2),
+            "산입액합계_불확실포함": round(total_in_max, 2),
             "비교시급": round(compare_hourly, 2),
+            "비교시급_불확실포함": round(compare_hourly_max, 2),
+            "판정": 판정,
             "위반여부": violation,
             "월부족액": shortfall,
             "산입내역": detail,
@@ -492,10 +563,19 @@ def calc_weekly_holiday_pay(weekly_hours: float, hourly_wage: float,
 # ---------------------------------------------------------------------------
 
 def _add_months(d: date, n: int) -> date:
+    """n개월 후. 월말 클램핑이 일어나면 **다음 달 1일**로 본다.
+
+    2024-02-29 + 12개월을 2025-02-28로 당기면 1년 근로 만료가 하루 앞당겨져
+    연차 15일이 실제보다 하루 일찍 발생한다(2026-09-01 리뷰). 만 1년은 2025-02-28
+    종료 → 발생일은 2025-03-01이 맞다.
+    """
     y, m = divmod(d.month - 1 + n, 12)
     y += d.year
     m += 1
-    return date(y, m, min(d.day, calendar.monthrange(y, m)[1]))
+    last = calendar.monthrange(y, m)[1]
+    if d.day > last:
+        return date(y + 1, 1, 1) if m == 12 else date(y, m + 1, 1)
+    return date(y, m, d.day)
 
 
 def calc_annual_leave(hire_date: str, base_date: str, attendance_rate: float = 1.0,
@@ -617,6 +697,14 @@ def calc_annual_leave(hire_date: str, base_date: str, attendance_rate: float = 1
                "(근기법 §11·시행령 별표1).")
     주의.append("2026-02-19 개정으로 임신기·육아기 근로시간 단축 기간은 출근으로 간주된다 "
                "(§60⑥4·5호) — 출근율 산정 시 반영할 것.")
+    주의.append("총발생일수는 입사 이후 **누적 발생분**이며 사용분·소멸분(§60⑦ 1년 미사용 "
+               "시 소멸)은 반영하지 않는다 — 미사용 잔여일수나 연차수당 산정에 그대로 쓰지 말 것.")
+    if attendance_rate < 0.8:
+        주의.append(
+            f"출근율 {attendance_rate:.0%}(80% 미만)인 해의 15일 연차는 미발생으로 계산했지만, "
+            "근기법 §60②는 그런 해에도 **1개월 개근 시 1일**의 연차를 부여한다. "
+            "개근한 달 수만큼 별도로 발생하므로 이 결과의 총발생일수는 법정 최소치를 "
+            "밑돌 수 있다 — 월별 개근 여부를 확인해 가산할 것.")
 
     return {
         "결과": {
@@ -645,12 +733,30 @@ def calc_overtime_pay(ordinary_hourly: float, overtime_h: float, night_h: float,
 
     - 연장·휴일 수당은 근로 시간 자체의 임금(100%)을 포함한 금액, 야간은 가산분(50%)만
       — 야간근로는 통상 소정근로·연장근로와 겹쳐 기본분이 이미 지급되기 때문.
-    - holiday_h가 8시간을 넘고 holiday_over8_h가 0이면 8시간 초과분을 자동 분리한다.
+    - holiday_h는 **총 휴일근로시간**이다. holiday_over8_h를 함께 주면 그중 8시간
+      초과분을 지정하는 것이고(총시간에서 차감), 생략하면 8시간 기준으로 자동 분리한다.
     - 상시 5인 미만(employees<5) 사업장은 §56 미적용 — 가산 없이 근로 시간분(100%)만.
     """
     steps, 근거, 주의 = [], [], []
 
-    if holiday_over8_h == 0 and holiday_h > 8:
+    for 이름, 값 in (("overtime_h", overtime_h), ("night_h", night_h),
+                    ("holiday_h", holiday_h), ("holiday_over8_h", holiday_over8_h),
+                    ("ordinary_hourly", ordinary_hourly)):
+        if 값 is not None and float(값) < 0:
+            raise ValueError(f"{이름}에 음수({값})는 넣을 수 없습니다.")
+
+    if holiday_over8_h:
+        # holiday_h를 '총 휴일근로시간'으로 정의한다. 예전에는 초과분을 함께 넘기면
+        # 총시간 전체에 8시간 이내 배율을 적용한 뒤 초과분을 또 더해 **이중 계상**됐다
+        # (2026-09-01 실측: 10h+2h → 190,000원, 정답 160,000원).
+        총휴일 = float(holiday_h)
+        if 총휴일 < holiday_over8_h:
+            raise ValueError(
+                f"holiday_over8_h({holiday_over8_h})가 총 휴일근로시간 holiday_h({holiday_h})보다 큽니다.")
+        holiday_h = 총휴일 - holiday_over8_h
+        steps.append(f"휴일근로 {총휴일}시간 = 8시간 이내 {holiday_h}시간 + "
+                     f"8시간 초과 {holiday_over8_h}시간 (초과분 직접 지정)")
+    elif holiday_h > 8:
         holiday_over8_h = holiday_h - 8
         holiday_h = 8.0
         steps.append(f"휴일근로 {holiday_h + holiday_over8_h}시간 중 8시간 초과분 "
@@ -740,7 +846,9 @@ def calc_severance_pay(avg_daily_wage: float, service_days: int, weekly_hours: f
         return {"결과": {"퇴직급여": 0, "제도": plan_type},
                 "계산과정": steps, "근거": 근거, "주의사항": 주의}
 
-    if plan_type.upper().endswith("DC") or plan_type.upper() == "DC":
+    # "DC형"·"확정기여형(DC)" 같은 표기가 endswith("DC")에 걸리지 않아 **DC 가입자에게
+    # 퇴직금 공식 금액을 반환**하던 문제 (2026-09-01 실측).
+    if "DC" in plan_type.upper() or "확정기여" in plan_type:
         steps.append("DC(확정기여)형 — 평균임금 방식 산정식 부적용")
         근거.append("근로자퇴직급여 보장법 §20① — DC형 부담금은 연간 임금총액의 1/12 이상")
         주의.append("DC형은 사용자가 매년 연간 임금총액의 1/12 이상을 부담금으로 납입하는 "

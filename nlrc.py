@@ -78,6 +78,20 @@ COMMITTEES = {
 
 PAGE_SIZE = 10           # 단일 구분 검색의 서버 고정 페이지 크기 (실측)
 DEFAULT_CACHE_TTL = 300
+PAGE_SIZE = 10          # 단일 구분 검색의 페이지당 건수 (실측)
+
+# 필수 필드가 이 비율 이상 비면 파서가 깨진 것으로 본다. 전면 붕괴(카테고리 0개)만
+# 잡는 게이트로는 부족하다 — 셀렉터 하나만 바뀌면 items 개수는 정상이고 내용만 빈값이 되어
+# "정상 결과"로 보이기 때문이다 (2026-09-01 리뷰).
+FIELD_BLANK_THRESHOLD = 0.5
+
+
+class NlrcParseError(RuntimeError):
+    """응답은 받았으나 구조가 예상과 달라 결과를 읽지 못함 — 자료 부존재와 무관."""
+
+
+class NlrcUpstreamError(RuntimeError):
+    """노동위원회 사이트 접속·세션 실패 — 자료 부존재와 무관."""
 DEFAULT_MIN_INTERVAL = 0.5
 
 _HIGHLIGHT_RE = re.compile(r"</?b>")
@@ -391,9 +405,13 @@ class NlrcClient:
              "page": int, "total_pages": int|None (단일 구분에서만),
              "notice": str (있을 때만)}
         """
+        _raw_keyword = (keyword or "").strip()
         keyword = re.sub(r"[{}\[\]/?.,;:|)*~!`^\-_+<>@#$%&\\=('\"]", " ", keyword or "").strip()
         if not keyword:
             raise ValueError("keyword는 필수입니다 — nlrc 검색은 빈 검색어를 지원하지 않습니다 (서버측 제약).")
+
+        if not isinstance(page, int) or isinstance(page, bool) or page < 1:
+            raise ValueError(f"page는 1 이상의 정수여야 합니다: {page!r}")
 
         codes = _resolve_categories(categories)
         comm_code = _resolve_committee(committee)
@@ -435,6 +453,32 @@ class NlrcClient:
         known_totals = [t for t in totals_by_category.values() if t is not None]
         total = sum(known_totals) if known_totals else None
 
+        # --- 파서 생존 판정 3단 게이트 ---------------------------------------
+        # 진짜 0건일 때도 카테고리 헤더와 total은 반드시 내려온다(실측). 따라서 추가
+        # 네트워크 왕복(카나리) 없이 "결과 없음"과 "파서 파손"을 구조적으로 구분할 수 있다.
+        _behavior = ("사용자에게 조회 실패를 알리고, 판정례가 없다고 단정하지 마세요. "
+                     "필요하면 nlrc.go.kr에서 직접 확인하도록 안내하세요.")
+        if not parsed["categories"]:
+            raise NlrcParseError(
+                "노동위원회 사이트 구조가 바뀌어 결과 영역을 읽지 못했습니다 (카테고리 0개). "
+                "검색 결과가 없다는 뜻이 아닙니다. " + _behavior)
+        if total and total > 0 and not items:
+            raise NlrcParseError(
+                f"총 {total}건이 있다고 나오는데 목록을 한 건도 읽지 못했습니다 — "
+                "결과 항목의 마크업이 바뀐 것으로 보입니다. 자료 부존재가 아닙니다. " + _behavior)
+        if items:
+            blank = sum(1 for it in items if not it.get("사건번호") or not it.get("판정일"))
+            if blank / len(items) >= FIELD_BLANK_THRESHOLD:
+                raise NlrcParseError(
+                    f"목록 {len(items)}건 중 {blank}건에서 사건번호·판정일을 읽지 못했습니다 — "
+                    "항목 내부 마크업이 바뀐 것으로 보입니다. 자료 부존재가 아닙니다. " + _behavior)
+        # ---------------------------------------------------------------------
+
+        # 페이지네이션 앵커는 요청 윈도 주변만 내려와 범위를 벗어나면 오염된다
+        # (실측: page=99999 → total_pages 99990). 총건수로 계산한 값을 우선한다.
+        if len(codes) == 1 and total is not None:
+            parsed["total_pages"] = max(1, -(-total // PAGE_SIZE))
+
         result = {
             "items": items,
             "total": total,
@@ -442,14 +486,28 @@ class NlrcClient:
             "page": page,
             "total_pages": parsed["total_pages"],
         }
+        notices = []
+        if re.sub(r"\s+", " ", _raw_keyword) != re.sub(r"\s+", " ", keyword):
+            result["정규화된_검색어"] = keyword
+            notices.append(
+                f"검색어의 특수문자를 공백으로 바꿔 '{keyword}'로 조회했습니다 "
+                f"(원본 '{_raw_keyword}'). 문서번호·사건번호로 찾는 중이라면 결과가 "
+                "다를 수 있습니다.")
         if len(codes) > 1 or categories is None:
-            result["notice"] = (
+            notices.append(
                 "구분을 2개 이상(또는 전체) 지정하면 서버가 구분별 미리보기 약 5건만 "
                 "반환하며 page가 무시됩니다. 더 보려면 categories를 1개로 좁혀 주세요.")
+        if (parsed["total_pages"] or 1) < page and total:
+            notices.append(
+                f"요청한 page={page}가 범위를 벗어났습니다 (총 {total}건 / "
+                f"{parsed['total_pages']}페이지). 결과가 없다는 뜻이 아닙니다 — "
+                "page를 범위 안으로 낮춰 다시 조회하세요.")
         elif total == 0 or not items:
-            result["notice"] = (
-                f"'{keyword}' 검색 결과가 없습니다. 검색어를 짧게 바꾸거나 "
-                "다른 구분·기간으로 다시 시도해 보세요.")
+            notices.append(
+                f"'{keyword}' 검색 결과가 없습니다 (검색은 정상 수행됐고 총건수 0건으로 "
+                "확인됨). 검색어를 짧게 바꾸거나 다른 구분·기간으로 다시 시도해 보세요.")
+        if notices:
+            result["notice"] = " / ".join(notices)
 
         if use_cache:
             self._cache[cache_key] = (time.time(), result)

@@ -20,18 +20,28 @@ server.py — 노무 특화 MCP 서버 (labor-mcp)
 배포: 서버컴퓨터 상시 구동 + tailscale funnel --bg --https=8443 localhost:8735
 """
 import logging
+import re
 import os
 from datetime import date
+import functools
 from pathlib import Path
-from typing import Optional
+from typing import Literal, Optional
 
 from mcp.server.fastmcp import FastMCP
+from mcp.types import ToolAnnotations
 
 # law_go_kr는 import 시점에 LAW_API_OC 환경변수를 읽는다 —
 # run_server.bat이 local_env.bat을 먼저 call 하므로 프로세스 기동 시 이미 설정돼 있다.
-from law_go_kr import LawGoKrClient, LawGoKrError
+from law_go_kr import (
+    LawAuthError,
+    LawGoKrClient,
+    LawGoKrError,
+    LawInvalidInput,
+    LawNotFound,
+    LawUpstreamError,
+)
 from moel_expc import MoelExpcClient
-from nlrc import NlrcClient
+from nlrc import NlrcClient, NlrcParseError, NlrcUpstreamError
 import calculators as calc
 import payroll as pr
 import labor_constants as LC
@@ -53,10 +63,25 @@ mcp = FastMCP(
         "임금대장 전체 점검은 analyze_payroll(labor_resource('schema/임금대장-입력')의 스키마로 "
         "변환 후 호출), 급여 구조 설계는 design_pay_table을 사용하세요. "
         "근로계약서·취업규칙 검토 시에는 먼저 labor_resource('checklist/근로계약서' 또는 "
-        "'checklist/취업규칙')를 로드해 체크리스트 순서대로 검토하세요. "
-        "계산 결과의 최종 판단에는 전문가(공인노무사) 확인이 필요함을 항상 안내하세요."
+        "'checklist/취업규칙')를 로드해 체크리스트 순서대로 검토하세요 "
+        "(표준취업규칙은 약 6만 자이므로 chapter 인자로 장 단위로 나눠 읽을 것). "
+        "답변 초안에 인용한 문서번호(판례·행정해석·판정례)는 verify_citations로 실존 여부를 "
+        "일괄 검증할 수 있습니다. 검색 결과가 이상하면 check_sources_health로 원천 사이트 "
+        "상태를 먼저 확인하세요. "
+        "계산 결과의 최종 판단에는 전문가(공인노무사) 확인이 필요함을 항상 안내하세요.\n\n"
+        "모든 도구 응답의 status 필드 해석: "
+        "OK(정상) · NOT_FOUND(검색은 성공했고 결과 없음 — 자료 부존재로 판단해도 됨) · "
+        "UPSTREAM_ERROR(원천 사이트 접근 실패) · PARSE_ERROR(사이트 개편 등으로 응답 해석 실패) — "
+        "**이 둘은 자료가 없다는 뜻이 절대 아니므로 부존재로 단정하지 말고 사용자에게 조회 "
+        "실패를 알릴 것** · AUTH_ERROR(law.go.kr 기관코드·IP 등록 문제 — 부존재와 무관, "
+        "서버 관리자 확인 필요) · INVALID_INPUT(입력 형식 오류 — 안내에 따라 고쳐 재호출). "
+        "응답에 '안내' 필드가 있으면 그 지시를 따르세요.\n"
+        "임금대장을 다룰 때 주민등록번호·계좌번호 등은 입력하지 마세요 — 스키마가 요구하지 "
+        "않으며, 입력값은 AI 대화 컨텍스트를 통과합니다."
     ),
-    host="0.0.0.0",
+    # MCP 스펙은 로컬 바인딩을 권고한다. 0.0.0.0이면 SDK의 DNS 리바인딩 보호도 꺼진다.
+    # Tailscale Funnel은 localhost로 접속하므로 기능 손실 없이 LAN 노출면이 사라진다.
+    host=os.environ.get("HOST", "127.0.0.1"),
     port=PORT,
     stateless_http=False,
 )
@@ -64,6 +89,87 @@ mcp = FastMCP(
 _law = LawGoKrClient()
 _moel = MoelExpcClient()
 _nlrc = NlrcClient()
+
+
+_DISCLAIMER = ("이 계산은 참고용입니다 — 최종 판단은 공인노무사 확인이 필요합니다.")
+
+_GUIDANCE = {
+    "NOT_FOUND": "검색·조회는 정상 수행됐고 결과가 0건입니다 — 이 경우에 한해 "
+                 "'해당 자료 없음'으로 판단해도 됩니다.",
+    "UPSTREAM_ERROR": "원천 사이트 접근에 실패했습니다. **자료가 없다는 뜻이 아닙니다** — "
+                      "사용자에게 조회 실패를 알리고, 부존재로 단정하지 마세요.",
+    "PARSE_ERROR": "원천 사이트의 화면 구조가 바뀌어 응답을 해석하지 못했습니다. "
+                   "**자료가 없다는 뜻이 아닙니다** — 사용자에게 조회 실패를 알리고, "
+                   "필요하면 원천 사이트에서 직접 확인하도록 안내하세요.",
+    "AUTH_ERROR": "law.go.kr 인증(기관코드·서버 IP 등록) 문제입니다. 자료 부존재와 무관하며 "
+                  "서버 관리자 확인이 필요합니다 — 검색 결과 0건으로 해석하지 마세요.",
+    "INVALID_INPUT": "입력 형식이 잘못됐습니다 — 오류 메시지의 형식으로 고쳐 다시 호출하세요.",
+}
+
+
+def _status_for(exc: BaseException) -> str:
+    if isinstance(exc, LawAuthError):
+        return "AUTH_ERROR"
+    if isinstance(exc, NlrcParseError):
+        return "PARSE_ERROR"
+    if isinstance(exc, LawNotFound):
+        return "NOT_FOUND"
+    if isinstance(exc, (LawInvalidInput, ValueError, KeyError, TypeError, AttributeError)):
+        return "INVALID_INPUT"
+    if isinstance(exc, (LawUpstreamError, NlrcUpstreamError, LawGoKrError)):
+        return "UPSTREAM_ERROR"
+    return "UPSTREAM_ERROR"
+
+
+def _looks_empty(out: dict) -> bool:
+    """검색 결과가 0건인지 — 원천 장애와 구분되도록 클라이언트가 이미 검증한 뒤에만 호출."""
+    if out.get("total") == 0 or out.get("총건수") == 0:
+        return True
+    for k in ("items", "cases", "연혁", "고용노동부_행정해석"):
+        if k in out and not out[k]:
+            if k == "고용노동부_행정해석" and out.get("법제처_법령해석례"):
+                return False
+            return True
+    return False
+
+
+def _guard(calc_tool: bool = False):
+    """모든 도구 응답에 status를 붙이고, 예외를 계약된 오류 응답으로 바꾼다.
+
+    예전에는 requests 예외가 그대로 새어나가 도구마다 다른 형상(ToolError 영문 문자열 /
+    빈 결과 / {"오류": ...})으로 나갔고, 원천 장애가 "자료 없음"으로 둔갑했다.
+    """
+    def deco(fn):
+        @functools.wraps(fn)
+        def wrapper(*args, **kwargs):
+            try:
+                out = fn(*args, **kwargs)
+            except Exception as e:                      # noqa: BLE001 — 계약상 전부 포획
+                st = _status_for(e)
+                logging.warning("%s 실패(%s): %s", fn.__name__, st, e)
+                payload = {"status": st, "오류": f"{type(e).__name__}: {e}",
+                           "안내": _GUIDANCE[st]}
+                if calc_tool:
+                    payload["주의사항"] = [_DISCLAIMER]
+                return payload
+            if not isinstance(out, dict):
+                out = {"결과": out}
+            if "status" not in out:
+                if "오류" in out:
+                    out["status"] = "INVALID_INPUT"
+                elif _looks_empty(out):
+                    out["status"] = "NOT_FOUND"
+                else:
+                    out["status"] = "OK"
+            if out["status"] in _GUIDANCE:
+                out.setdefault("안내", _GUIDANCE[out["status"]])
+            if calc_tool:
+                주의 = out.setdefault("주의사항", [])
+                if isinstance(주의, list) and _DISCLAIMER not in 주의:
+                    주의.append(_DISCLAIMER)
+            return out
+        return wrapper
+    return deco
 
 
 def _today() -> str:
@@ -80,12 +186,13 @@ def _resolve_law(name: str) -> tuple:
 # 검색 도구 4종
 # ---------------------------------------------------------------------------
 
-@mcp.tool()
+@mcp.tool(annotations=ToolAnnotations(readOnlyHint=True, openWorldHint=True))
+@_guard()
 def labor_law_article(
     law: str,
     article_no: str = "",
     as_of_date: str = "",
-    mode: str = "조문",
+    mode: Literal["조문", "부칙", "연혁"] = "조문",
     promul_no: str = "",
     recent: int = 10,
     max_chars: int = 6000,
@@ -125,11 +232,12 @@ def labor_law_article(
             rows = _law.law_history(law_name, law_id=law_id)
             return {"법령명": law_name, "시행본수": len(rows), "연혁": rows}
         return {"오류": f"mode는 조문/부칙/연혁 중 하나여야 합니다 (입력: {mode})"}
-    except (LawGoKrError, ValueError) as e:
-        return {"오류": str(e)}
+    except (LawGoKrError, ValueError):
+        raise   # _guard가 status(AUTH_ERROR/NOT_FOUND/UPSTREAM_ERROR/INVALID_INPUT)로 분류한다
 
 
-@mcp.tool()
+@mcp.tool(annotations=ToolAnnotations(readOnlyHint=True, openWorldHint=True))
+@_guard()
 def moel_interpretation_search(
     keyword: str = "",
     serial: str = "",
@@ -169,14 +277,25 @@ def moel_interpretation_search(
         filtered = bool(date_from or date_to or search_body or latest_first)
         if moleg_too and not filtered:
             return _moel.search_both(keyword, display=display)
-        return _moel.search(
+        r = _moel.search(
             keyword, display=display, date_from=date_from, date_to=date_to,
             search_body=search_body, sort="ddes" if latest_first else "")
-    except (LawGoKrError, ValueError) as e:
-        return {"오류": str(e)}
+        # 키 이름을 search_both와 통일한다 — 예전에는 latest_first를 켜는 순간
+        # 최상위 키가 total/items로 바뀌어 LLM이 찾던 키가 사라졌다.
+        out = {"고용노동부_행정해석": r["items"],
+               "고용노동부_행정해석_총건수": r["total"],
+               "법제처_법령해석례": [],
+               "법제처_생략사유": ("필터·정렬 지정 시에는 고용노동부 행정해석만 검색합니다 "
+                             "— 법제처 법령해석례가 필요하면 필터 없이 다시 호출하세요.")}
+        if r.get("안내"):
+            out["안내"] = r["안내"]
+        return out
+    except (LawGoKrError, ValueError):
+        raise   # _guard가 status(AUTH_ERROR/NOT_FOUND/UPSTREAM_ERROR/INVALID_INPUT)로 분류한다
 
 
-@mcp.tool()
+@mcp.tool(annotations=ToolAnnotations(readOnlyHint=True, openWorldHint=True))
+@_guard()
 def labor_case_search(
     keyword: str = "",
     case_serial: str = "",
@@ -195,7 +314,8 @@ def labor_case_search(
     Args:
         keyword: 검색어 (case_serial 미지정 시 필수)
         case_serial: 판례일련번호 — 지정하면 본문(판시사항·판결요지·참조조문·전문) 반환
-        court: "대법원" 또는 "하위법원" (빈값 = 전체)
+        court: **법원명 그대로** — "대법원", "서울고등법원" 등. '하위법원'·'하급심'
+            같은 분류어는 law.go.kr이 인식하지 못해 항상 0건이라 거부된다 (빈값 = 전체)
         date_from / date_to: 선고일자 범위 YYYYMMDD
         display / page: 페이지네이션
         max_chars: 판례내용 최대 길이
@@ -208,11 +328,12 @@ def labor_case_search(
         return _law.search_cases(
             keyword, court=court, date_from=date_from, date_to=date_to,
             display=display, page=page)
-    except (LawGoKrError, ValueError) as e:
-        return {"오류": str(e)}
+    except (LawGoKrError, ValueError):
+        raise   # _guard가 status(AUTH_ERROR/NOT_FOUND/UPSTREAM_ERROR/INVALID_INPUT)로 분류한다
 
 
-@mcp.tool()
+@mcp.tool(annotations=ToolAnnotations(readOnlyHint=True, openWorldHint=True))
+@_guard()
 def nlrc_decision_search(
     keyword: str = "",
     category: str = "",
@@ -247,15 +368,16 @@ def nlrc_decision_search(
         return _nlrc.search(
             keyword, categories=cats, page=page,
             date_from=date_from, date_to=date_to, committee=committee)
-    except Exception as e:  # requests 예외 포함 — 스크래핑 특성상 광범위 포착
-        return {"오류": f"{type(e).__name__}: {e}"}
+    except Exception:  # requests·파싱 예외 포함 — _guard가 status로 분류한다
+        raise
 
 
 # ---------------------------------------------------------------------------
 # 계산 도구 8종 — 반환 공통 규약: {결과, 계산과정, 근거, 주의사항}
 # ---------------------------------------------------------------------------
 
-@mcp.tool()
+@mcp.tool(annotations=ToolAnnotations(readOnlyHint=True, openWorldHint=False, idempotentHint=True))
+@_guard(calc_tool=True)
 def check_minimum_wage(
     items: list,
     weekly_hours: float = 40.0,
@@ -285,11 +407,12 @@ def check_minimum_wage(
             items, weekly_hours, year or date.today().year,
             probation=probation, contract_1yr_plus=contract_1yr_plus,
             simple_labor=simple_labor)
-    except ValueError as e:
-        return {"오류": str(e)}
+    except ValueError:
+        raise   # _guard가 INVALID_INPUT으로 분류한다
 
 
-@mcp.tool()
+@mcp.tool(annotations=ToolAnnotations(readOnlyHint=True, openWorldHint=False, idempotentHint=True))
+@_guard(calc_tool=True)
 def calc_ordinary_avg_wage(
     items: list,
     weekly_hours: float = 40.0,
@@ -319,19 +442,34 @@ def calc_ordinary_avg_wage(
     """
     try:
         y = year or date.today().year
-        out = {"통상임금": calc.calc_ordinary_wage(items, weekly_hours, y,
-                                                   as_of_date=as_of_date or None)}
+        ow_r = calc.calc_ordinary_wage(items, weekly_hours, y, as_of_date=as_of_date or None)
+        결과 = {"통상임금": ow_r["결과"]}
+        계산과정 = list(ow_r["계산과정"])
+        근거 = list(ow_r["근거"])
+        주의 = list(ow_r["주의사항"])
         if last_3m_items:
-            ow = out["통상임금"]["결과"]["월통상임금"]
-            out["평균임금"] = calc.calc_average_wage(
+            if not days_in_window:
+                주의.append("days_in_window(산정 창구 총일수)를 지정하지 않아 91일로 가정했습니다 "
+                           "— 실제 창구가 89~92일이면 1일 평균임금이 최대 약 2% 달라집니다.")
+            aw_r = calc.calc_average_wage(
                 last_3m_items, annual_bonus_total, annual_leave_pay_total,
-                days_in_window or 91, ordinary_wage_monthly=ow, weekly_hours=weekly_hours)
-        return out
-    except ValueError as e:
-        return {"오류": str(e)}
+                days_in_window or 91, ordinary_wage_monthly=ow_r["결과"]["월통상임금"],
+                weekly_hours=weekly_hours)
+            결과["평균임금"] = aw_r["결과"]
+            계산과정 += aw_r["계산과정"]
+            근거 += [g for g in aw_r["근거"] if g not in 근거]
+            주의 += [c for c in aw_r["주의사항"] if c not in 주의]
+        else:
+            주의.append("평균임금은 last_3m_items(직전 3개월 임금항목)를 넣어야 계산됩니다 "
+                       "— 지금 결과에는 통상임금만 있습니다.")
+        # 계산 도구 8종의 {결과, 계산과정, 근거, 주의사항} 4필드 규약에 맞춘다
+        return {"결과": 결과, "계산과정": 계산과정, "근거": 근거, "주의사항": 주의}
+    except ValueError:
+        raise   # _guard가 INVALID_INPUT으로 분류한다
 
 
-@mcp.tool()
+@mcp.tool(annotations=ToolAnnotations(readOnlyHint=True, openWorldHint=False, idempotentHint=True))
+@_guard(calc_tool=True)
 def calc_annual_leave(
     hire_date: str,
     base_date: str,
@@ -359,11 +497,12 @@ def calc_annual_leave(
         return calc.calc_annual_leave(
             hire_date, base_date, attendance_rate=attendance_rate, mode=mode,
             fiscal_start=fiscal_start, employed_on_base_date=employed_on_base_date)
-    except ValueError as e:
-        return {"오류": str(e)}
+    except ValueError:
+        raise   # _guard가 INVALID_INPUT으로 분류한다
 
 
-@mcp.tool()
+@mcp.tool(annotations=ToolAnnotations(readOnlyHint=True, openWorldHint=False, idempotentHint=True))
+@_guard(calc_tool=True)
 def calc_weekly_holiday_pay(
     weekly_hours: float,
     hourly_wage: float,
@@ -383,7 +522,8 @@ def calc_weekly_holiday_pay(
                                         perfect_attendance=perfect_attendance)
 
 
-@mcp.tool()
+@mcp.tool(annotations=ToolAnnotations(readOnlyHint=True, openWorldHint=False, idempotentHint=True))
+@_guard(calc_tool=True)
 def calc_overtime_pay(
     ordinary_hourly: float,
     overtime_h: float = 0,
@@ -401,21 +541,30 @@ def calc_overtime_pay(
         ordinary_hourly: 통상시급 (calc_ordinary_avg_wage로 먼저 산출 권장)
         overtime_h: 연장근로 시간
         night_h: 야간근로(22~06시) 시간
-        holiday_h: 휴일근로 시간 (8시간 초과분은 자동 분리)
-        holiday_over8_h: 휴일 8시간 초과분을 직접 지정할 때
-        employees: 상시 근로자 수 (5 미만이면 가산 미적용)
+        holiday_h: **총** 휴일근로 시간. holiday_over8_h를 함께 주면 그중 8시간
+            초과분을 지정하는 것이고, 생략하면 8시간 기준으로 자동 분리한다
+        holiday_over8_h: 휴일 8시간 초과분 (holiday_h에서 차감된다)
+        employees: 상시 근로자 수 (5 미만이면 가산 미적용) — **지정하지 않으면
+            5인(전면 적용)으로 가정하며, 그 사실이 주의사항에 표시된다**
     """
-    return calc.calc_overtime_pay(ordinary_hourly, overtime_h, night_h,
-                                  holiday_h, holiday_over8_h=holiday_over8_h,
-                                  employees=employees)
+    out = calc.calc_overtime_pay(ordinary_hourly, overtime_h, night_h,
+                                 holiday_h, holiday_over8_h=holiday_over8_h,
+                                 employees=employees)
+    if employees == 5:
+        # 5인 미만이면 §56 자체가 적용되지 않아 결론이 정반대가 된다 — 가정을 밝힌다
+        out.setdefault("주의사항", []).append(
+            "employees를 지정하지 않으면 상시 5인(=§56 전면 적용)으로 가정합니다 — "
+            "4인 이하 사업장이면 가산 의무가 없어 결과가 달라지므로 실제 인원을 넣으세요.")
+    return out
 
 
-@mcp.tool()
+@mcp.tool(annotations=ToolAnnotations(readOnlyHint=True, openWorldHint=False, idempotentHint=True))
+@_guard(calc_tool=True)
 def calc_severance_pay(
     avg_daily_wage: float,
     service_days: int,
     weekly_hours: float = 40.0,
-    plan_type: str = "퇴직금",
+    plan_type: Literal["퇴직금", "DB", "DC"] = "퇴직금",
 ) -> dict:
     """퇴직급여 계산 — 1년 미만·주 15시간 미만 제외, DC형 구분.
 
@@ -433,7 +582,8 @@ def calc_severance_pay(
                                    plan_type=plan_type)
 
 
-@mcp.tool()
+@mcp.tool(annotations=ToolAnnotations(readOnlyHint=True, openWorldHint=False, idempotentHint=True))
+@_guard(calc_tool=True)
 def calc_dismissal_notice_pay(
     ordinary_daily: float,
     service_months: float,
@@ -454,7 +604,8 @@ def calc_dismissal_notice_pay(
                                           exempt_reason=exempt_reason or None)
 
 
-@mcp.tool()
+@mcp.tool(annotations=ToolAnnotations(readOnlyHint=True, openWorldHint=False, idempotentHint=True))
+@_guard(calc_tool=True)
 def calc_wage_cut_limit(avg_daily_wage: float, wage_period_total: float) -> dict:
     """징계 감급(감봉) 한도 계산 (근기법 95조).
 
@@ -472,7 +623,8 @@ def calc_wage_cut_limit(avg_daily_wage: float, wage_period_total: float) -> dict
 # 분석·설계 도구 2종
 # ---------------------------------------------------------------------------
 
-@mcp.tool()
+@mcp.tool(annotations=ToolAnnotations(readOnlyHint=True, openWorldHint=False, idempotentHint=True))
+@_guard(calc_tool=True)
 def analyze_payroll(data: dict) -> dict:
     """임금대장 일괄 분석 — 직원×월 매트릭스로 6종 검사.
 
@@ -490,11 +642,12 @@ def analyze_payroll(data: dict) -> dict:
     """
     try:
         return pr.analyze_payroll(data)
-    except ValueError as e:
-        return {"오류": str(e)}
+    except ValueError:
+        raise   # _guard가 INVALID_INPUT으로 분류한다
 
 
-@mcp.tool()
+@mcp.tool(annotations=ToolAnnotations(readOnlyHint=True, openWorldHint=False, idempotentHint=True))
+@_guard(calc_tool=True)
 def design_pay_table(cond: dict) -> dict:
     """급여테이블 역산 설계 — 조건 입력 → 법 준수 급여 구조 + 계약서 임금조항 문안.
 
@@ -511,8 +664,8 @@ def design_pay_table(cond: dict) -> dict:
     """
     try:
         return pr.design_pay_table(cond)
-    except ValueError as e:
-        return {"오류": str(e)}
+    except ValueError:
+        raise   # _guard가 INVALID_INPUT으로 분류한다
 
 
 # ---------------------------------------------------------------------------
@@ -536,8 +689,45 @@ _RESOURCES = {
 }
 
 
+def _slice_doc(text: str, chapter: str = "", article: str = ""):
+    """표준취업규칙류 문서에서 장·조 단위로 잘라낸다 (## 제N장 / ### 제N조 구조)."""
+    import re as _re
+    if article:
+        no = article.strip().lstrip("제").rstrip("조")
+        pat = _re.compile(rf"^#+\s*제\s*{_re.escape(no)}\s*조", _re.M)
+    else:
+        no = chapter.strip().lstrip("제").rstrip("장")
+        pat = _re.compile(rf"^#+\s*제\s*{_re.escape(no)}\s*장", _re.M)
+    m = pat.search(text)
+    라벨 = (f"제{no}조" if article else f"제{no}장")
+    if not m:
+        return None, 라벨
+    level = len(text[m.start():m.end()].split()[0])
+    nxt = _re.compile(rf"^#{{1,{level}}}\s", _re.M).search(text, m.end())
+    return text[m.start(): nxt.start() if nxt else len(text)], 라벨
+
+
 def _read_resource(fname: str) -> str:
     return (RESOURCE_DIR / fname).read_text(encoding="utf-8")
+
+
+# MCP 리소스 URI는 퍼센트 인코딩되어 등록되므로 한글 키를 그대로 쓰면
+# labor://checklist/%EA%B7%BC... 가 되어 **문서에 적힌 주소로는 read가 실패**한다
+# (2026-09-01 실측). ASCII 슬러그로 등록하고, 도구 쪽 한글 키는 그대로 받는다.
+_RESOURCE_SLUGS = {
+    "checklist/근로계약서": "checklist/employment-contract",
+    "checklist/취업규칙": "checklist/work-rules",
+    "table/임금항목-산입매트릭스": "table/wage-item-matrix",
+    "table/5인미만-적용제외": "table/under5-exemptions",
+    "table/시행중-개정법-기준선": "table/law-baseline",
+    "table/최저임금-연도별": "table/minimum-wage-by-year",
+    "schema/임금대장-입력": "schema/payroll-input",
+    "template/표준취업규칙-2026": "template/work-rules-2026",
+    "template/표준취업규칙-단시간-2026": "template/work-rules-parttime-2026",
+    "template/직장내괴롭힘-표준안-2026": "template/harassment-policy-2026",
+    "template/표준근로계약서": "template/employment-contract-form",
+}
+_SLUG_TO_KEY = {v: k for k, v in _RESOURCE_SLUGS.items()}
 
 
 def _register_resources():
@@ -547,16 +737,19 @@ def _register_resources():
                 return _read_resource(f)
             return _reader
         fn = _make()
-        fn.__name__ = f"labor_resource_{i}"
+        fn.__name__ = _RESOURCE_SLUGS[key].replace("/", "_").replace("-", "_")
         fn.__doc__ = desc
-        mcp.resource(f"labor://{key}", description=desc, mime_type="text/markdown")(fn)
+        mcp.resource(f"labor://{_RESOURCE_SLUGS[key]}", name=key,
+                     description=desc, mime_type="text/markdown")(fn)
 
 
 _register_resources()
 
 
-@mcp.tool()
-def labor_resource(name: str = "") -> dict:
+@mcp.tool(annotations=ToolAnnotations(readOnlyHint=True, openWorldHint=False, idempotentHint=True))
+@_guard()
+def labor_resource(name: str = "", chapter: str = "", article: str = "",
+                   max_chars: int = 12000, start_char: int = 0) -> dict:
     """노무 지식 리소스 열람 — 체크리스트·표준 서식·판정표·입력 스키마.
 
     name을 비우면 사용 가능한 리소스 목록을 반환한다. 근로계약서/취업규칙 검토를
@@ -570,14 +763,205 @@ def labor_resource(name: str = "") -> dict:
             "schema/임금대장-입력", "template/표준취업규칙-2026",
             "template/표준취업규칙-단시간-2026", "template/직장내괴롭힘-표준안-2026",
             "template/표준근로계약서"
+        chapter: 특정 장만 — "제3장" 또는 "3" (표준취업규칙처럼 긴 문서용)
+        article: 특정 조만 — "제17조" 또는 "17"
+        max_chars: 본문 최대 길이(기본 12000). 잘리면 "잘림" 안내가 붙는다
+        start_char: 이어서 읽을 시작 위치
+
+    Note:
+        표준취업규칙(약 6만 자)처럼 큰 문서는 chapter/article로 좁혀 읽을 것 —
+        전체를 그대로 불러오면 컨텍스트를 크게 소모한다.
     """
     if not name:
-        return {"리소스목록": [{"name": k, "설명": d} for k, (_, d) in _RESOURCES.items()]}
-    hit = _RESOURCES.get(name.strip())
+        return {"리소스목록": [{"name": k, "슬러그": _RESOURCE_SLUGS[k], "설명": d}
+                          for k, (_, d) in _RESOURCES.items()],
+                "안내": "name에 위 name(한글 키) 또는 슬러그를 넣어 다시 호출하세요. "
+                      "MCP 리소스 URI는 labor://<슬러그> 입니다."}
+    key = name.strip()
+    key = _SLUG_TO_KEY.get(key, key)
+    hit = _RESOURCES.get(key)
     if not hit:
         return {"오류": f"리소스 없음: {name}",
                 "리소스목록": list(_RESOURCES.keys())}
-    return {"name": name, "내용": _read_resource(hit[0])}
+    text = _read_resource(hit[0])
+    전체길이 = len(text)
+    범위 = "전체"
+    if chapter or article:
+        text, 범위 = _slice_doc(text, chapter, article)
+        if text is None:
+            return {"오류": f"{범위}를 문서에서 찾지 못했습니다: {key}",
+                    "안내": "chapter/article 없이 호출해 목차를 먼저 확인하세요."}
+    body = text[start_char:start_char + max_chars]
+    out = {"name": key, "슬러그": _RESOURCE_SLUGS[key], "범위": 범위,
+           "전체길이": 전체길이, "내용": body}
+    if start_char + len(body) < len(text):
+        out["잘림"] = (f"{범위} {len(text)}자 중 {start_char}~{start_char + len(body)}자만 "
+                     f"표시했습니다 — start_char={start_char + len(body)}로 이어 읽거나 "
+                     "chapter/article로 좁혀 조회하세요.")
+    return out
+
+
+
+
+# ---------------------------------------------------------------------------
+# 인용 검증 · 자료원 상태
+# ---------------------------------------------------------------------------
+
+# 노동위원회 사건부호 — 이게 붙으면 법원 판례가 아니라 노동위 판정례로 라우팅한다
+_NLRC_MARKS = ("부해", "부노", "차별", "단협", "조정", "중재", "교섭", "복수노조", "관할")
+_CITE_MAX = 10
+
+
+def _norm_cite(x: str) -> str:
+    """문서번호 비교용 정규화 — 공백 제거, 하이픈류 통일."""
+    x = re.sub(r"\s+", "", str(x or ""))
+    return x.replace("‐", "-").replace("–", "-").replace("—", "-").replace("−", "-")
+
+
+def _cite_match(query: str, candidate: str) -> bool:
+    """정확일치 또는 **접미 일치**.
+
+    실무 축약은 앞쪽 기관명을 생략하는 형태다("기획재정부 근로기준정책과-73" →
+    "근로기준정책과-73"). 접미로 한정하면 '2024'처럼 연도만 있는 입력이 아무 사건에나
+    걸리는 오탐과, '-73'이 '-732'에 걸리는 숫자 경계 오탐이 동시에 막힌다.
+    """
+    q, c = _norm_cite(query), _norm_cite(candidate)
+    if not q or not c:
+        return False
+    if q == c:
+        return True
+    if not c.endswith(q):
+        return False
+    prev = c[: -len(q)][-1:]
+    return not (prev.isdigit() or q[:1].isdigit() and prev.isdigit())
+
+
+def _cite_kind(cite: str) -> str:
+    c = _norm_cite(cite)
+    if re.fullmatch(r"\d{2}-\d{3,4}", c):
+        return "법령해석례"
+    if re.match(r"^[가-힣]", c) and "-" in c:
+        return "행정해석"
+    if re.search(r"\d", c) and any(m in c for m in _NLRC_MARKS):
+        return "노동위원회"
+    if re.search(r"^\D{0,4}\d{2,4}[가-힣]{1,4}\d+$", c):
+        return "판례"
+    if "-" in c:
+        return "행정해석"
+    return "미상"
+
+
+@mcp.tool(annotations=ToolAnnotations(readOnlyHint=True, openWorldHint=True))
+@_guard()
+def verify_citations(citations: list) -> dict:
+    """인용한 노무 문서번호가 실제로 존재하는지 일괄 검증 (호출당 최대 10건).
+
+    답변 초안에 쓴 판례·행정해석·판정례 번호를 넣으면 원천에서 조회해 실존 여부를
+    확인한다. 표기는 자동 라우팅된다 — "2020다247190"(법원 판례), "근로기준정책과-3084"
+    (고용노동부 행정해석), "07-0039"(법제처 법령해석례), "중앙2024부해1234"(노동위 판정례).
+
+    판정 3값:
+      확인     — 원천에서 같은 문서번호를 찾았다
+      미확인   — 조회는 성공했으나 일치하는 문서가 없다 (유사 후보를 함께 제시)
+      판단불가 — 원천 장애·인증 실패로 확인 자체를 못 했다 (**부존재로 단정 금지**)
+
+    Args:
+        citations: 문서번호 문자열 목록
+    """
+    if not isinstance(citations, list) or not citations:
+        raise ValueError("citations는 문서번호 문자열의 목록이어야 합니다.")
+    if len(citations) > _CITE_MAX:
+        raise ValueError(f"한 번에 최대 {_CITE_MAX}건까지 검증합니다 (요청 {len(citations)}건).")
+
+    결과 = []
+    for raw in citations:
+        cite = str(raw).strip()
+        kind = _cite_kind(cite)
+        row = {"인용": cite, "종류": kind}
+        try:
+            if kind == "판례":
+                hits = _law.search_cases(cite, display=20)["cases"]
+                키, 라벨 = "사건번호", "사건명"
+            elif kind == "행정해석":
+                hits = _moel.search(cite, display=20)["items"]
+                키, 라벨 = "안건번호", "안건명"
+            elif kind == "법령해석례":
+                hits = _law.search_interpretations(cite, display=20)
+                키, 라벨 = "안건번호", "안건명"
+            elif kind == "노동위원회":
+                hits = _nlrc.search(cite, categories=None, use_cache=True)["items"]
+                키, 라벨 = "사건번호", "사건명"
+            else:
+                row.update({"판정": "미확인",
+                            "사유": "문서번호 형식을 인식하지 못해 어느 자료원에서 찾을지 "
+                                  "결정할 수 없습니다."})
+                결과.append(row)
+                continue
+            일치 = [h for h in hits if _cite_match(cite, h.get(키, ""))]
+            if 일치:
+                h = 일치[0]
+                row.update({"판정": "확인", "문서번호": h.get(키, ""), "제목": h.get(라벨, "")})
+                for f in ("선고일자", "해석일자", "회신일자", "판정일", "법원명", "해석기관", "위원회", "출처"):
+                    if h.get(f):
+                        row[f] = h[f]
+            else:
+                row.update({"판정": "미확인",
+                            "유사후보": [{"문서번호": h.get(키, ""), "제목": h.get(라벨, "")[:60]}
+                                     for h in hits[:3]]})
+        except Exception as e:                                  # noqa: BLE001
+            row.update({"판정": "판단불가", "사유": f"{type(e).__name__}: {e}",
+                        "status": _status_for(e)})
+        결과.append(row)
+
+    미확인 = sum(1 for r in 결과 if r["판정"] == "미확인")
+    판단불가 = sum(1 for r in 결과 if r["판정"] == "판단불가")
+    out = {"검증결과": 결과,
+           "요약": {"확인": sum(1 for r in 결과 if r["판정"] == "확인"),
+                  "미확인": 미확인, "판단불가": 판단불가},
+           "한계": ["문서번호가 실존한다는 것이지, 그 문서가 인용한 논거를 뒷받침한다는 뜻은 "
+                  "아닙니다 — 내용은 별도로 확인하세요.",
+                  "'미확인'은 이 자료원에서 못 찾았다는 뜻이며, 표기 방식이 다르거나 다른 "
+                  "기관 자료일 수 있습니다."]}
+    if 판단불가:
+        out["안내"] = (f"{판단불가}건은 원천 장애로 확인하지 못했습니다 — "
+                     "**존재하지 않는다고 단정하지 마세요.**")
+    return out
+
+
+@mcp.tool(annotations=ToolAnnotations(readOnlyHint=True, openWorldHint=True))
+@_guard()
+def check_sources_health() -> dict:
+    """자료원 3곳(law.go.kr · 고용노동부 행정해석 · 노동위원회)의 응답 상태 점검.
+
+    검색 결과가 이상할 때 "내 서버 문제인지, 원천 사이트 문제인지"를 먼저 가른다.
+    각 자료원에 알려진 검색어로 1회 조회해 결과 건수와 소요 시간을 보고한다.
+    """
+    import time as _t
+    probes = [
+        ("law.go.kr 판례", lambda: len(_law.search_cases("통상임금", display=1)["cases"])),
+        ("법제처 법령해석례", lambda: len(_law.search_interpretations("연차", display=1))),
+        ("고용노동부 행정해석", lambda: _moel.search("연차", display=1)["total"]),
+        ("노동위원회 판정례", lambda: _nlrc.search("해고", categories=["부당해고"],
+                                            use_cache=False)["total"] or 0),
+    ]
+    상태, 정상 = [], 0
+    for 이름, fn in probes:
+        t0 = _t.time()
+        try:
+            n = fn()
+            정상 += 1
+            상태.append({"자료원": 이름, "status": "OK", "표본건수": n,
+                       "소요초": round(_t.time() - t0, 2)})
+        except Exception as e:                                  # noqa: BLE001
+            상태.append({"자료원": 이름, "status": _status_for(e),
+                       "오류": f"{type(e).__name__}: {e}",
+                       "소요초": round(_t.time() - t0, 2)})
+    out = {"자료원상태": 상태, "정상": 정상, "전체": len(probes)}
+    if 정상 < len(probes):
+        out["안내"] = ("일부 자료원이 응답하지 않습니다 — 그 자료원의 검색 결과가 "
+                     "0건이어도 자료 부존재로 판단하지 마세요. "
+                     "AUTH_ERROR면 서버의 law.go.kr 기관코드·IP 등록 확인이 필요합니다.")
+    return out
 
 
 # ---------------------------------------------------------------------------

@@ -74,10 +74,21 @@ class TestMinWageConcealment:
         assert res["요약"]["위반건수"]["최저임금"] == 1
         assert res["요약"]["총부족액추정"] == pytest.approx(256_880)
 
-    def test_임금체불성_위반이면_상습체불_제재_경고(self):
+    def test_체불_1건에는_상습체불_제재_경고를_띄우지_않는다(self):
+        """근기법 §43의4① 상습체불사업주 = 직전 1년 3개월분 이상 체불,
+        또는 5회 이상 + 총액 3천만원 이상. 1건·소액에 제재 경고를 붙이면 경고가
+        신뢰를 잃는다 (2026-09-01 리뷰)."""
         data = payroll_data([emp([month("2026-01", [item("기본급", 1_900_000)])])])
         res = analyze_payroll(data)
-        assert any("상습" in w and "2025-10-23" in w for w in res["경고"])
+        assert not any("2025-10-23" in w for w in res["경고"])
+        assert any("시정이 필요" in w for w in res["경고"])
+
+    def test_3개월_이상_체불이면_상습체불_요건_안내(self):
+        data = payroll_data([emp([month(ym, [item("기본급", 1_900_000)])
+                                  for ym in ("2026-01", "2026-02", "2026-03")])])
+        res = analyze_payroll(data)
+        assert res["요약"]["체불월수"] == 3
+        assert any("상습체불사업주" in w and "2025-10-23" in w for w in res["경고"])
 
     def test_적법_대장은_위반_0건(self):
         data = payroll_data([emp([month("2026-01", [item("기본급", 2_299_000)])])])
@@ -138,11 +149,15 @@ class Test52Hours:
         text = e["상세"]["요지"] + " ".join(e["상세"]["주의사항"])
         assert "주별" in text
 
-    def test_주별없이_월연장_20시간은_적법_추정(self):
+    def test_주별없이_월연장_20시간은_불확실(self):
+        """월 합계로는 '4주에 13시간씩 몰아 쓴 52시간'(주 단위 §53① 위반)을
+        구분할 수 없다 — 한도 이내여도 적법으로 확정하지 않는다."""
         data = payroll_data([emp([month("2026-01", [item("기본급", 2_299_000)],
                                         연장=20.0)])])
         res = analyze_payroll(data)
-        assert entries_of(res, "주52시간")[0]["판정"] == "적법"
+        e = entries_of(res, "주52시간")[0]
+        assert e["판정"] == "불확실"
+        assert "주별" in e["상세"]["요지"] + " ".join(e["상세"]["주의사항"])
 
     def test_탄력근로제_특정주_초과는_불확실(self):
         data = payroll_data([emp([month("2026-01", [item("기본급", 2_299_000)],
@@ -164,11 +179,14 @@ class TestUnder5:
         ]
         return analyze_payroll(payroll_data(직원, n=4))
 
-    def test_연장_실지급_0원이어도_가산수당은_적법(self):
+    def test_연장_실지급_0원이면_가산은_미적용이되_시간분_임금은_불확실(self):
+        """§56 가산 의무는 없지만 §43(근로 제공분 임금)은 5인 미만에도 적용된다.
+        예전에는 연장 20시간분 임금이 한 푼도 없어도 '적법'으로 나갔다 (2026-09-01 리뷰)."""
         res = self._res()
         e = entries_of(res, "가산수당", 사원ID="A")[0]
-        assert e["판정"] == "적법"
-        assert "가산 의무 없음" in e["상세"]["요지"]
+        assert e["판정"] == "불확실"
+        assert "§56" in e["상세"]["요지"]
+        assert e["상세"]["시간분임금추정"] > 0
         assert res["요약"]["위반건수"].get("가산수당", 0) == 0
 
     def test_연차_검사는_미수행(self):

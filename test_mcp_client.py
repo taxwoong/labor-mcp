@@ -25,11 +25,16 @@ HEADERS = {
     "Accept": "application/json, text/event-stream",
 }
 
-# tools/list에 반드시 있어야 하는 도구 (server.py의 15종 중 핵심)
+# tools/list에 반드시 있어야 하는 도구 — 15종 전부를 검사한다.
+# 예전에는 8종만 검사해 계산 도구 7종이 통째로 사라져도 스모크 테스트가 통과했다.
 EXPECTED_TOOLS = {
     "labor_law_article", "moel_interpretation_search", "labor_case_search",
-    "nlrc_decision_search", "check_minimum_wage", "analyze_payroll",
-    "design_pay_table", "labor_resource",
+    "nlrc_decision_search",
+    "check_minimum_wage", "calc_ordinary_avg_wage", "calc_annual_leave",
+    "calc_weekly_holiday_pay", "calc_overtime_pay", "calc_severance_pay",
+    "calc_dismissal_notice_pay", "calc_wage_cut_limit",
+    "analyze_payroll", "design_pay_table", "labor_resource",
+    "verify_citations", "check_sources_health",
 }
 
 
@@ -144,13 +149,22 @@ def run(url: str) -> bool:
                        "arguments": {"keyword": "연차", "display": 3}},
         }, session_id)
         parsed = tool_result(result)
-        if "오류" in parsed:
-            print(f"    경고 — law.go.kr 호출 오류 (OC 키/IP 등록 확인): {parsed['오류']}")
+        status = parsed.get("status")
+        오류키 = [k for k in parsed if k.endswith("_오류")]
+        n_moel = len(parsed.get("고용노동부_행정해석", []))
+        n_moleg = len(parsed.get("법제처_법령해석례", []))
+        # status 계약 도입 전에는 `"오류" in parsed`만 봤는데 실제 키가
+        # `고용노동부_행정해석_오류`라서 law.go.kr이 죽어도 "성공 0건"으로 통과했다.
+        if status not in ("OK", "NOT_FOUND") or 오류키:
+            print(f"    경고 — status={status} {오류키 or ''} "
+                  f"{parsed.get('오류') or parsed.get('안내', '')}")
+            ok = False
+        elif n_moel + n_moleg == 0:
+            print(f"    경고 — status={status}인데 결과 0건 (검색어 '연차'로 0건은 이례적)")
             ok = False
         else:
-            n_moel = len(parsed.get("고용노동부_행정해석", []))
-            n_moleg = len(parsed.get("법제처_법령해석례", []))
-            print(f"    성공 — 고용노동부 행정해석 {n_moel}건 + 법제처 해석례 {n_moleg}건")
+            print(f"    성공 — status={status}, 고용노동부 행정해석 {n_moel}건 "
+                  f"+ 법제처 해석례 {n_moleg}건")
     except Exception as e:
         print(f"    실패: {e}")
         ok = False

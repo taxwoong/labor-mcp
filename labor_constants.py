@@ -108,8 +108,16 @@ AVG_WEEKS_PER_MONTH = 365 / 7 / 12  # ≒ 4.345
 
 def monthly_standard_hours(weekly_hours: float = 40.0) -> float:
     """월 소정근로시간(주휴 포함). 주휴시간은 (주소정/40)×8로 비례 (단시간근로자 —
-    기간제법·근기법 §18 비례원칙). 40h 기준 209.0 반환."""
+    기간제법·근기법 §18 비례원칙). 40h 기준 209.0 반환.
+
+    **주 15시간 미만이면 주휴시간을 더하지 않는다** — 근기법 §18③이 §55(주휴)·§60(연차)를
+    적용 제외하고, 최저임금법 시행령 §5①은 "§55①에 따라 유급으로 처리되는 시간"만
+    적용기준 시간에 넣기 때문이다. 예전에는 무조건 더해 주 12시간 근로자의 분모가
+    52.1h가 아닌 62.6h가 되어 **허위 최저임금 위반**이 났다 (2026-09-01 실측).
+    """
     capped = min(weekly_hours, STATUTORY_WEEKLY_HOURS)
+    if weekly_hours < WEEKLY_HOLIDAY_MIN_HOURS:
+        return round(weekly_hours * AVG_WEEKS_PER_MONTH, 1)
     weekly_holiday_hours = capped / STATUTORY_WEEKLY_HOURS * 8
     hours = (weekly_hours + weekly_holiday_hours) * AVG_WEEKS_PER_MONTH
     # 주 40h는 관행·고시상 209로 고정 (208.57 반올림)
