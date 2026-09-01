@@ -1,0 +1,31 @@
+name: 기능 제안 / Feature request
+description: 추가로 검색하고 싶은 자료원, 필요한 계산·검토 기능 아이디어
+labels: ["enhancement"]
+body:
+  - type: textarea
+    id: need
+    attributes:
+      label: 어떤 상황에서 필요한가요
+      description: 실제 노무 실무에서 막혔던 장면을 구체적으로 적어주세요 (어떤 문서를 찾다가, 어떤 수치를 계산하다가).
+    validations:
+      required: true
+  - type: dropdown
+    id: kind
+    attributes:
+      label: 어떤 종류인가요
+      options:
+        - 새 자료원 (검색 대상 추가)
+        - 새 계산 (수치)
+        - 검토 체크리스트 / 지식 리소스 보강
+        - 기존 도구의 파라미터·출력 개선
+        - 기타
+  - type: input
+    id: source
+    attributes:
+      label: 자료원 URL
+      description: 해당 자료를 제공하는 사이트나 Open API가 있으면 링크를 남겨주세요.
+  - type: textarea
+    id: basis
+    attributes:
+      label: 근거 조문·판례
+      description: 계산·검토 기능이라면 근거가 되는 조문이나 판례를 적어주시면 바로 설계에 들어갈 수 있습니다.

@@ -1,8 +1,23 @@
 __pycache__/
 *.pyc
 .venv/
+.pytest_cache/
+
+# 로그 — 개인정보(임금대장 원문)와 운영 URL이 남는다
 server.log
+server.log.old
 setup_task.log
+
+# 비밀값 — 인증 없는 서버라 운영 URL이 곧 접근 권한이다 (공개 저장소)
 local_env.bat
 *.local.md
-.pytest_cache/
+
+# 직원 배포용 안내물 — 커넥터 URL(비밀 경로)이 본문에 박혀 있다. 사내 게시판 전용
+직원안내_*.html
+직원안내_*.md
+files.zip
+*.zip
+
+# 로컬 전용 문서 — 작업로그에는 기관코드(OC)·운영 URL이 남을 수 있다
+작업로그_*.md
+운영정보*.md

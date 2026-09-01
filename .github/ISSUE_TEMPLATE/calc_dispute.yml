@@ -1,0 +1,67 @@
+name: 계산 결과 이의 / Wrong calculation
+description: 최저임금·통상임금·연차·주휴·가산수당·퇴직금 등 계산 결과가 실무와 다를 때
+labels: ["bug", "calculation"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        계산 도구는 결정론적입니다 — 결과가 다르다면 ①입력 해석 ②법령·판례 반영 시점
+        ③산입범위 판단 중 하나가 어긋난 것입니다. **근거(조문·판례·행정해석 문서번호)를
+        같이 주시면** 어느 쪽인지 바로 가려집니다.
+  - type: dropdown
+    id: tool
+    attributes:
+      label: 어느 계산인가요
+      options:
+        - check_minimum_wage (최저임금·산입범위·수습감액)
+        - calc_ordinary_avg_wage (통상임금·평균임금)
+        - calc_annual_leave (연차유급휴가)
+        - calc_weekly_holiday_pay (주휴수당)
+        - calc_overtime_pay (연장·야간·휴일 가산수당)
+        - calc_severance_pay (퇴직급여)
+        - calc_dismissal_notice_pay (해고예고수당)
+        - calc_wage_cut_limit (감급 한도)
+        - analyze_payroll (임금대장 일괄 분석)
+        - design_pay_table (급여테이블 설계)
+    validations:
+      required: true
+  - type: textarea
+    id: input
+    attributes:
+      label: 입력값
+      description: 개인식별정보는 빼고 수치만 주세요 (이름·주민번호·사업장명 불필요).
+      render: text
+    validations:
+      required: true
+  - type: textarea
+    id: got_vs_expected
+    attributes:
+      label: 도구 결과 vs 실무 결과
+      description: 금액·일수를 각각 적어주세요. 응답의 `계산과정` 필드를 그대로 붙여주시면 가장 좋습니다.
+      render: text
+    validations:
+      required: true
+  - type: textarea
+    id: basis
+    attributes:
+      label: 근거
+      description: |
+        조문(예 - 근로기준법 제60조제2항), 판례(예 - 대법원 2021다227100),
+        고용노동부 행정해석 문서번호(예 - 근로기준정책과-3084) 중 아는 것을 적어주세요.
+    validations:
+      required: true
+  - type: input
+    id: year
+    attributes:
+      label: 기준 연도
+      description: 최저임금·산입비율은 연도별로 다릅니다.
+      placeholder: 예 - 2026
+  - type: dropdown
+    id: scale
+    attributes:
+      label: 상시 근로자 수
+      description: 5인 미만이면 가산수당·연차 등 적용 자체가 달라집니다.
+      options:
+        - 5인 이상
+        - 5인 미만
+        - 모르겠음 / 해당 없음
