@@ -1021,5 +1021,8 @@ def review_work_rules() -> str:
 
 
 if __name__ == "__main__":
-    logging.info("labor-mcp 서버 시작 — port=%s, 도구 15종, 리소스 %d종", PORT, len(_RESOURCES))
+    import asyncio as _aio
+    _n_tools = len(_aio.run(mcp.list_tools()))
+    logging.info("labor-mcp 서버 시작 — %s:%s, 도구 %d종, 리소스 %d종",
+                 mcp.settings.host, PORT, _n_tools, len(_RESOURCES))
     mcp.run(transport="streamable-http")
