@@ -335,6 +335,12 @@ class Test인용검증_실호출:
         assert "OC=" not in x["출처"]
 
     def test_자료원_상태_점검(self):
+        # v1.2에서 자료원이 4곳 → 10곳으로 늘었다. 개수를 고정하면 원천을 더할 때마다
+        # 깨지므로, 이름과 계약(status 존재)만 검사한다.
         r = S.check_sources_health()
-        assert r["전체"] == 4
-        assert all("status" in x for x in r["자료원상태"])
+        이름들 = {x["자료원"] for x in r["자료원상태"]}
+        assert r["전체"] == len(r["자료원상태"]) >= 4
+        assert all("status" in x and "소요초" in x for x in r["자료원상태"])
+        assert any("판례" in n for n in 이름들) and any("행정해석" in n for n in 이름들)
+        assert any("아카이브" in n for n in 이름들)      # 로컬 아카이브도 점검 대상
+        assert 0 <= r["정상"] <= r["전체"]

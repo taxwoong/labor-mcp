@@ -8,8 +8,10 @@ server.py — 노무 특화 MCP 서버 (labor-mcp)
   4. 임금대장 분석 (최저임금·통상/평균임금·주52시간·가산수당·기재사항)
   5. 급여테이블 설계 (조건 입력 → 법 준수 급여 구조 역산)
 
-구성: 검색 도구 4 + 계산 도구 8 + 분석·설계 도구 2 + 리소스 열람 도구 1 = 15개
+구성: 검색 도구 9(실시간 8 + 로컬 아카이브 1) + 계산 도구 8 + 분석·설계 도구 2
+      + 리소스 열람 도구 1 + 검증·상태 2 = 22개
       + 정적 리소스 11종(labor:// URI) + 검토 프롬프트 2종
+사례 아카이브: archive.py(SQLite+FTS5) — ingest_archive.py로 적재, 6개월 주기 갱신
 
 역할 분담 원칙: 근로계약서·취업규칙 같은 '문서'는 Claude가 직접 읽고 판단하며
 이 서버는 체크리스트·근거·계산만 공급한다. 반대로 임금대장 같은 '표 데이터'는
@@ -42,6 +44,11 @@ from law_go_kr import (
 )
 from moel_expc import MoelExpcClient
 from nlrc import NlrcClient, NlrcParseError, NlrcUpstreamError
+from law_committee import CommitteeClient
+from comwel import ComwelAuthError, ComwelClient, ComwelParseError, ComwelUpstreamError
+from moel_fastcounsel import FastCounselClient, FastCounselParseError, FastCounselUpstreamError
+import archive
+import vintage
 import calculators as calc
 import payroll as pr
 import labor_constants as LC
@@ -58,7 +65,20 @@ mcp = FastMCP(
         "대한민국 노무(노동법) 특화 도구입니다. "
         "법령 조문·부칙·연혁은 labor_law_article, 고용노동부 행정해석(질의회시)과 법제처 "
         "법령해석례는 moel_interpretation_search, 법원 노동판례는 labor_case_search, "
-        "노동위원회 판정례는 nlrc_decision_search를 사용하세요. "
+        "노동위원회 판정례는 nlrc_decision_search(화면) 또는 committee_decision_search("
+        "source='노동위원회', 공식 API)를 사용하세요. 고용보험심사위원회·산재재심사위원회 "
+        "결정문과 행정심판례도 committee_decision_search, 훈령·예규·고시는 "
+        "labor_admin_rule_search, 근로복지공단 산재 판결문은 comwel_precedent_search, "
+        "고용노동부 빠른인터넷상담은 moel_counsel_search입니다. "
+        "사례를 넓게 찾을 때는 먼저 labor_archive_search(로컬 아카이브 — 위 자료원 9곳을 "
+        "전문검색, 원천 장애와 무관, 2글자 검색어 가능)로 후보를 모으고, 최신 자료는 "
+        "실시간 도구로 교차 확인하세요.\n\n"
+        "**사례를 인용할 때는 반드시 그 자료의 일자를 함께 밝히세요.** 노동법은 판례·행정해석이 "
+        "자주 뒤집혀 오래된 사례는 결론이 반대인 경우가 있습니다(1년 기간제 연차 26일→11일, "
+        "통상임금 '고정성' 폐기 등). 검색 응답의 '시점주의'는 그 결과에 전환일보다 앞선 자료가 "
+        "섞였다는 뜻이므로, 해당 자료의 결론을 그대로 쓰지 말고 현행 기준으로 다시 판단하세요. "
+        "'시점참고'·'일자미상'도 같은 취지입니다. 현행 기준선 전체는 "
+        "labor_resource('table/시행중-개정법-기준선')에 있습니다. "
         "수치 검증(최저임금·통상/평균임금·연차·주휴·가산수당·퇴직급여·해고예고)은 계산 도구를, "
         "임금대장 전체 점검은 analyze_payroll(labor_resource('schema/임금대장-입력')의 스키마로 "
         "변환 후 호출), 급여 구조 설계는 design_pay_table을 사용하세요. "
@@ -93,6 +113,9 @@ mcp = FastMCP(
 _law = LawGoKrClient()
 _moel = MoelExpcClient()
 _nlrc = NlrcClient()
+_committee = CommitteeClient()
+_comwel = ComwelClient()
+_counsel = FastCounselClient()
 
 
 _DISCLAIMER = ("이 계산은 참고용입니다 — 최종 판단은 공인노무사 확인이 필요합니다.")
@@ -112,15 +135,16 @@ _GUIDANCE = {
 
 
 def _status_for(exc: BaseException) -> str:
-    if isinstance(exc, LawAuthError):
+    if isinstance(exc, (LawAuthError, ComwelAuthError)):
         return "AUTH_ERROR"
-    if isinstance(exc, NlrcParseError):
+    if isinstance(exc, (NlrcParseError, ComwelParseError, FastCounselParseError)):
         return "PARSE_ERROR"
     if isinstance(exc, LawNotFound):
         return "NOT_FOUND"
     if isinstance(exc, (LawInvalidInput, ValueError, KeyError, TypeError, AttributeError)):
         return "INVALID_INPUT"
-    if isinstance(exc, (LawUpstreamError, NlrcUpstreamError, LawGoKrError)):
+    if isinstance(exc, (LawUpstreamError, NlrcUpstreamError, LawGoKrError,
+                        ComwelUpstreamError, FastCounselUpstreamError)):
         return "UPSTREAM_ERROR"
     return "UPSTREAM_ERROR"
 
@@ -137,8 +161,12 @@ def _looks_empty(out: dict) -> bool:
     return False
 
 
-def _guard(calc_tool: bool = False):
+def _guard(calc_tool: bool = False, dated: bool = False):
     """모든 도구 응답에 status를 붙이고, 예외를 계약된 오류 응답으로 바꾼다.
+
+    dated=True인 검색 도구는 결과에 **시점 정보**(시점범위·일자미상·시점주의)를 덧붙인다.
+    노동법은 판례·행정해석이 자주 뒤집혀, 오래된 사례를 그대로 인용하면 결론이 반대가 되는
+    일이 있다 — 전환점(labor_constants.DOCTRINE_TURNING_POINTS)보다 앞선 자료에 경고를 단다.
 
     예전에는 requests 예외가 그대로 새어나가 도구마다 다른 형상(ToolError 영문 문자열 /
     빈 결과 / {"오류": ...})으로 나갔고, 원천 장애가 "자료 없음"으로 둔갑했다.
@@ -171,6 +199,12 @@ def _guard(calc_tool: bool = False):
                 주의 = out.setdefault("주의사항", [])
                 if isinstance(주의, list) and _DISCLAIMER not in 주의:
                     주의.append(_DISCLAIMER)
+            if dated and out.get("status") == "OK":
+                kw = kwargs.get("keyword") or (args[0] if args and isinstance(args[0], str) else "")
+                try:
+                    vintage.apply_to(out, keyword=str(kw))
+                except Exception:                           # noqa: BLE001 — 부가 정보라 본 결과를 막지 않는다
+                    logging.warning("%s: 시점 주석 실패", fn.__name__, exc_info=True)
             return out
         return wrapper
     return deco
@@ -241,7 +275,7 @@ def labor_law_article(
 
 
 @mcp.tool(annotations=ToolAnnotations(readOnlyHint=True, openWorldHint=True))
-@_guard()
+@_guard(dated=True)
 def moel_interpretation_search(
     keyword: str = "",
     serial: str = "",
@@ -299,7 +333,7 @@ def moel_interpretation_search(
 
 
 @mcp.tool(annotations=ToolAnnotations(readOnlyHint=True, openWorldHint=True))
-@_guard()
+@_guard(dated=True)
 def labor_case_search(
     keyword: str = "",
     case_serial: str = "",
@@ -337,7 +371,7 @@ def labor_case_search(
 
 
 @mcp.tool(annotations=ToolAnnotations(readOnlyHint=True, openWorldHint=True))
-@_guard()
+@_guard(dated=True)
 def nlrc_decision_search(
     keyword: str = "",
     category: str = "",
@@ -374,6 +408,206 @@ def nlrc_decision_search(
             date_from=date_from, date_to=date_to, committee=committee)
     except Exception:  # requests·파싱 예외 포함 — _guard가 status로 분류한다
         raise
+
+
+# ---------------------------------------------------------------------------
+# 검색 도구 확장 5종 (v1.2) — 위원회 결정문·행정규칙·산재판례·빠른인터넷상담·로컬 아카이브
+# ---------------------------------------------------------------------------
+
+@mcp.tool(annotations=ToolAnnotations(readOnlyHint=True, openWorldHint=True))
+@_guard(dated=True)
+def committee_decision_search(
+    source: str,
+    keyword: str = "",
+    serial: str = "",
+    search_body: bool = False,
+    latest_first: bool = False,
+    display: int = 10,
+    page: int = 1,
+    date_from: str = "",
+    date_to: str = "",
+    max_chars: int = 8000,
+) -> dict:
+    """위원회 결정문·행정심판례 검색·본문 조회 (법제처 law.go.kr Open API — 스크래핑 아님).
+
+    source:
+      "노동위원회"        — 노동위원회 결정문 4.4만 건. 자료구분(부당해고 등)·담당위원회·
+                            판정사항·판정요지·판정결과. nlrc_decision_search와 같은 기관 자료지만
+                            공식 API라 화면 개편에 안전하고, 키워드 없이 최신순 열람도 된다.
+      "고용보험심사위원회" — 실업급여 수급자격·피보험자격 등 재결 118건, 주문·이유 전문.
+      "산재재심사위원회"   — 산업재해보상보험재심사위원회 재결 934건(요양·장해·유족·평균임금 등),
+                            사건 대/중/소분류·쟁점·이유 전문.
+      "행정심판"          — 중앙행정심판위원회 등 재결례 3.5만 건(전 분야) — 노동 관련은
+                            키워드(산재·고용보험·실업급여·체불 등)로 좁힐 것.
+
+    Args:
+        keyword: 검색어. 비우면 전체를 최신순으로 훑는다(latest_first 자동).
+        serial: 목록의 '일련번호'를 주면 본문 전문을 반환.
+        search_body: True면 본문 전문검색(느리고 넓음), 기본은 제목(사건명) 검색.
+        latest_first: True면 일자 내림차순, 기본은 관련도순.
+        date_from / date_to: YYYYMMDD. 행정심판은 의결일자 서버 필터, 나머지는 페이지 내 필터.
+        max_chars: 본문 장문 필드 절삭 상한.
+    """
+    if serial:
+        return _committee.get(source, serial, max_chars=max_chars)
+    sort = "ddes" if (latest_first or not keyword.strip()) else ""
+    res = _committee.search(source, keyword, display=display, page=page, search_body=search_body,
+                            sort=sort, date_from=date_from, date_to=date_to)
+    res["안내"] = "본문은 serial=<일련번호>로 조회. 노동위원회 자료는 판정요지 중심이며 결정문 전문(내용)은 대부분 미제공."
+    return res
+
+
+@mcp.tool(annotations=ToolAnnotations(readOnlyHint=True, openWorldHint=True))
+@_guard(dated=True)
+def labor_admin_rule_search(
+    keyword: str = "",
+    serial: str = "",
+    kind: str = "",
+    org: str = "고용노동부",
+    search_body: bool = False,
+    latest_first: bool = False,
+    display: int = 10,
+    page: int = 1,
+    article: str = "",
+    max_chars: int = 10000,
+    start_char: int = 0,
+) -> dict:
+    """행정규칙(훈령·예규·고시·지침) 검색·본문 조회 — 기본 고용노동부 소관 현행 441건.
+
+    취업규칙 심사요령(예규), 근로감독관 집무규정(훈령), 연도별 최저임금 고시, 사업종류별
+    산재보험료율 고시, 임금채권보장·직업훈련 지침 등 실무 판단의 직접 근거가 되는 규정.
+
+    Args:
+        keyword: 규칙명 검색어(기본) 또는 본문 검색어(search_body=True). 비우면 필터만으로 전체 목록.
+        serial: 목록의 '일련번호' → 본문 (article="9" 같은 조번호로 조문만, 장문은 start_char로 이어읽기).
+        kind: 훈령 | 예규 | 고시 | 공고 | 지침 | 기타 (비우면 전체).
+        org: 소관부처 — 기본 "고용노동부", ""이면 전 부처, law.go.kr 부처코드 숫자도 가능.
+        latest_first: True면 발령일 내림차순.
+    """
+    if serial:
+        return _law.get_admin_rule(serial, max_chars=max_chars, article=article, start_char=start_char)
+    return _law.search_admin_rules(keyword, display=display, page=page, org=org, kind=kind,
+                                   search_body=search_body, sort="ddes" if latest_first else "")
+
+
+@mcp.tool(annotations=ToolAnnotations(readOnlyHint=True, openWorldHint=True))
+@_guard(dated=True)
+def comwel_precedent_search(
+    result_type: str = "",
+    case_type: str = "",
+    injury_type: str = "",
+    page: int = 1,
+    rows: int = 10,
+    list_codes: bool = False,
+    max_chars: int = 6000,
+) -> dict:
+    """근로복지공단 산재보험 판례 판결문 조회 (공공데이터포털 API, 2004.01~2023.12).
+
+    산재 소송 판결문 전문을 사건결과(승소·기각·취하 등)·사건유형(요양·장해·유족·보험료 등)·
+    사고/질병 구분으로 걸러 본다. **키워드 검색은 없다** — 본문 키워드 검색은
+    labor_archive_search(sources="산재판례")를 쓰고, 이 도구는 유형별 탐색과 최신 확인용.
+    필터 값은 list_codes=True로 먼저 받는다. 서버에 DATA_GO_KR_KEY(활용신청 완료 키)가 필요.
+
+    Args:
+        result_type / case_type / injury_type: list_codes가 돌려준 값을 그대로.
+        rows: 페이지당 건수(최대 100). max_chars: 판결문 절삭 상한.
+    """
+    if list_codes:
+        return {"필터값": _comwel.codes(),
+                "안내": "result_type=사건결과, case_type=사건유형, injury_type=사고질병구분 값으로 넣어 재호출"}
+    return _comwel.search(result_type=result_type, case_type=case_type, injury_type=injury_type,
+                          page=page, rows=rows, max_chars=max_chars)
+
+
+@mcp.tool(annotations=ToolAnnotations(readOnlyHint=True, openWorldHint=True))
+@_guard(dated=True)
+def moel_counsel_search(
+    keyword: str = "",
+    post_id: str = "",
+    field: str = "질문+답변",
+    page: int = 1,
+) -> dict:
+    """고용노동부 빠른인터넷상담 게시판(10만 건+) 실시간 검색·본문 조회.
+
+    일반인의 질의에 담당 부서가 답한 실무 Q&A. 행정해석(질의회시)만큼 권위는 없지만
+    최신 사례가 매일 쌓인다. 아카이브(labor_archive_search sources="상담")가 더 빠르고
+    2글자 검색·기간 필터가 되므로, 이 도구는 아카이브 갱신 이후의 최신 글 확인용.
+
+    Args:
+        keyword: 게시판 자체 검색어 (field: "질문" | "답변" | "질문+답변").
+        post_id: 목록의 id를 주면 질의·답변 본문.
+    """
+    if post_id:
+        return _counsel.get(post_id)
+    if not keyword.strip():
+        raise ValueError("keyword 또는 post_id 중 하나는 필요합니다")
+    res = _counsel.list(page=page, unit=20, keyword=keyword, field=field)
+    res["안내"] = "본문은 post_id=<id>로 조회. 답변여부가 '미완료'인 글은 아직 답변이 없다."
+    return res
+
+
+def _archive_missing() -> dict:
+    return {"status": "UPSTREAM_ERROR",
+            "오류": f"사례 아카이브 DB가 없습니다: {archive.db_path()}",
+            "안내": "서버에서 `python ingest_archive.py all`(또는 refresh_archive.bat)을 실행해 적재해야 "
+                  "합니다. 자료 부존재가 아니라 아카이브 미구축입니다 — 실시간 검색 도구를 대신 쓰세요."}
+
+
+@mcp.tool(annotations=ToolAnnotations(readOnlyHint=True, openWorldHint=False, idempotentHint=True))
+@_guard()
+def labor_archive_search(
+    keyword: str = "",
+    sources: str = "",
+    date_from: str = "",
+    date_to: str = "",
+    limit: int = 10,
+    offset: int = 0,
+    latest_first: bool = False,
+    doc_id: str = "",
+    source: str = "",
+    max_chars: int = 8000,
+) -> dict:
+    """로컬 사례 아카이브 전문검색 — 원천 9곳을 한 번에, 원천 사이트가 죽어도 동작.
+
+    적재 자료원(sources 값): 노동위원회(nlrc) · 행정해석(moel) · 고용보험심사위원회(eiac) ·
+    산재재심사위원회(iaciac) · 행정심판(decc) · 행정규칙(admrul) · 빠른인터넷상담(counsel) ·
+    질의회시집(qnabook) · 산재판례(comwel). 6개월 주기로 증분 갱신되므로 **최신 자료는 실시간
+    도구로 교차 확인**할 것. 2글자 검색어("해고")가 되고 어절은 AND. 결과에는 발췌만 오므로
+    본문은 source+doc_id로 다시 호출한다.
+
+    **시점 대조**: 아카이브는 1965년 행정해석까지 담고 있어 결론이 이미 뒤집힌 자료가 섞인다.
+    각 항목의 '일자'와 응답의 '시점주의'(전환일보다 앞선 자료가 있다는 경고)를 반드시 확인하고,
+    인용할 때 일자를 함께 밝힐 것. 최근 자료만 보려면 date_from을 주거나 latest_first=True.
+    산재판례의 일자는 사건번호 접수연도에서 유추한 값("2019년경")이라 선고일이 아니다.
+
+    Args:
+        keyword: 검색어. 비우면 적재 현황(자료원별 건수·최근 적재일)을 반환.
+        sources: 쉼표 구분 자료원 (예: "노동위원회,행정해석"). 비우면 전체.
+        date_from / date_to: YYYYMMDD 또는 YYYY-MM-DD.
+        limit / offset: 페이지네이션 (limit 최대 50).
+        latest_first: True면 일자 내림차순, 기본은 관련도(BM25)순.
+        doc_id + source: 본문 전문 조회.
+    """
+    if not archive.exists_db():
+        return _archive_missing()
+    conn = archive.open_db(readonly=True)
+    try:
+        if doc_id:
+            if not source:
+                raise ValueError("doc_id로 본문을 보려면 source(자료원 하나)도 지정하세요")
+            d = archive.get(conn, source, doc_id, max_chars=max_chars)
+            return d if d else {"total": 0, "items": [], "오류": f"아카이브에 {source}/{doc_id} 없음"}
+        if not keyword.strip():
+            return {"적재현황": archive.stats(conn),
+                    "안내": "keyword를 넣어 검색하세요. 자료원 필터는 sources, 본문은 source+doc_id."}
+        res = archive.search(conn, keyword, sources=sources, date_from=date_from, date_to=date_to,
+                             limit=limit, offset=offset, latest_first=latest_first)
+        res["안내"] = ("발췌만 표시됨 — 본문은 source=<자료원>, doc_id=<doc_id>로 재호출. "
+                     "아카이브는 6개월 주기 갱신이므로 최신 자료는 실시간 도구로 교차 확인. "
+                     "**인용 시 각 항목의 '일자'를 함께 밝히고, '시점주의'가 있으면 그 지시를 따를 것.**")
+        return res
+    finally:
+        conn.close()
 
 
 # ---------------------------------------------------------------------------
@@ -878,10 +1112,33 @@ def verify_citations(citations: list) -> dict:
         raise ValueError(f"한 번에 최대 {_CITE_MAX}건까지 검증합니다 (요청 {len(citations)}건).")
 
     결과 = []
+    arch = None
+    try:
+        if archive.exists_db():
+            arch = archive.open_db(readonly=True)
+    except Exception as e:                                      # noqa: BLE001 — 아카이브는 선택 경로
+        logging.warning("verify_citations: 아카이브 열기 실패 — 원천 조회로 진행: %s", e)
     for raw in citations:
         cite = str(raw).strip()
         kind = _cite_kind(cite)
         row = {"인용": cite, "종류": kind}
+        # 로컬 아카이브 빠른 경로 — 행정해석·노동위 판정례는 문서번호가 그대로 들어 있다.
+        # 못 찾으면 '미확인'으로 단정하지 않고 원천 조회로 넘어간다.
+        if arch is not None and kind in ("행정해석", "노동위원회"):
+            try:
+                srcs = ["moel", "qnabook"] if kind == "행정해석" else ["nlrc"]
+                hits = archive.find_by_doc_no(arch, cite, sources=srcs, limit=5)
+                일치 = [h for h in hits if _cite_match(cite, h.get("문서번호", ""))]
+                if 일치:
+                    h = 일치[0]
+                    row.update({"판정": "확인", "문서번호": h["문서번호"], "제목": h.get("제목", ""),
+                                "출처": f"아카이브({h.get('자료원명', h.get('자료원'))})"})
+                    if h.get("일자"):
+                        row["일자"] = h["일자"]
+                    결과.append(row)
+                    continue
+            except Exception as e:                              # noqa: BLE001
+                logging.warning("verify_citations 아카이브 조회 실패(%s): %s", cite, e)
         try:
             if kind == "판례":
                 hits = _law.search_cases(cite, display=20)["cases"]
@@ -916,6 +1173,8 @@ def verify_citations(citations: list) -> dict:
             row.update({"판정": "판단불가", "사유": f"{type(e).__name__}: {e}",
                         "status": _status_for(e)})
         결과.append(row)
+    if arch is not None:
+        arch.close()
 
     미확인 = sum(1 for r in 결과 if r["판정"] == "미확인")
     판단불가 = sum(1 for r in 결과 if r["판정"] == "판단불가")
@@ -935,18 +1194,35 @@ def verify_citations(citations: list) -> dict:
 @mcp.tool(annotations=ToolAnnotations(readOnlyHint=True, openWorldHint=True))
 @_guard()
 def check_sources_health() -> dict:
-    """자료원 3곳(law.go.kr · 고용노동부 행정해석 · 노동위원회)의 응답 상태 점검.
+    """자료원 9곳(law.go.kr 6종 · 노동위원회 화면 · 빠른인터넷상담 · 산재판례 API)과
+    로컬 아카이브의 응답 상태 점검.
 
     검색 결과가 이상할 때 "내 서버 문제인지, 원천 사이트 문제인지"를 먼저 가른다.
     각 자료원에 알려진 검색어로 1회 조회해 결과 건수와 소요 시간을 보고한다.
     """
     import time as _t
+
+    def _archive_count():
+        if not archive.exists_db():
+            raise FileNotFoundError(f"아카이브 DB 없음: {archive.db_path()} — ingest_archive.py 실행 필요")
+        c = archive.open_db(readonly=True)
+        try:
+            return archive.stats(c)["총건수"]
+        finally:
+            c.close()
+
     probes = [
         ("law.go.kr 판례", lambda: len(_law.search_cases("통상임금", display=1)["cases"])),
         ("법제처 법령해석례", lambda: len(_law.search_interpretations("연차", display=1))),
         ("고용노동부 행정해석", lambda: _moel.search("연차", display=1)["total"]),
-        ("노동위원회 판정례", lambda: _nlrc.search("해고", categories=["부당해고"],
-                                            use_cache=False)["total"] or 0),
+        ("노동위원회 판정례(화면)", lambda: _nlrc.search("해고", categories=["부당해고"],
+                                                use_cache=False)["total"] or 0),
+        ("노동위원회 결정문(API)", lambda: _committee.search("nlrc", "해고", display=1)["total"]),
+        ("산재재심사위원회 결정문", lambda: _committee.search("iaciac", "요양", display=1)["total"]),
+        ("고용노동부 행정규칙", lambda: _law.search_admin_rules("취업규칙", org="고용노동부", display=1)["total"]),
+        ("빠른인터넷상담", lambda: _counsel.list(page=1, unit=10, keyword="연차")["total"] or 0),
+        ("산재판례 API(data.go.kr)", lambda: _comwel.count()),
+        ("사례 아카이브(로컬)", _archive_count),
     ]
     상태, 정상 = [], 0
     for 이름, fn in probes:

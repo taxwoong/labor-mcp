@@ -14,8 +14,8 @@ law.go.kr 클라이언트(`law_go_kr.py`)와 인증(OC 키·IP 화이트리스�
 
 ![Python](https://img.shields.io/badge/python-3.10%2B-blue)
 ![MCP](https://img.shields.io/badge/MCP-streamable--http-black)
-![tools](https://img.shields.io/badge/tools-17-brightgreen)
-![status](https://img.shields.io/badge/version-v1.1-informational)
+![tools](https://img.shields.io/badge/tools-22-brightgreen)
+![status](https://img.shields.io/badge/version-v1.2.1-informational)
 ![license](https://img.shields.io/badge/license-MIT-green)
 
 ```bash
@@ -31,14 +31,15 @@ python server.py              # http://127.0.0.1:8735/mcp (PORT·HOST 환경변�
 > **셀프호스팅 전용입니다.** 공개된 공용 서버는 운영하지 않습니다 — 인증이 없는
 > 엔드포인트라 주소를 공개하지 않습니다. 직접 띄워서 쓰세요.
 >
-> **law.go.kr 기반 검색 3종**(`labor_law_article`·`moel_interpretation_search`·
-> `labor_case_search`)**을 쓰려면 `LAW_API_OC`가 필요합니다.**
-> [open.law.go.kr](https://open.law.go.kr)에서 무료로 발급받는 기관코드이며, **등록한
-> IP에서만** 동작하므로 서버의 공인 IP를 사전 등록해야 합니다. 키가 없어도 나머지 12종
-> (계산 8·분석 2·리소스 열람 1 + 노동위원회 판정례 `nlrc_decision_search`)은 그대로
-> 동작합니다 — 키 미설정 시 해당 3종만 오류를 반환합니다.
+> **law.go.kr 기반 검색 5종**(`labor_law_article`·`moel_interpretation_search`·
+> `labor_case_search`·`committee_decision_search`·`labor_admin_rule_search`)**을 쓰려면
+> `LAW_API_OC`가 필요합니다.** [open.law.go.kr](https://open.law.go.kr)에서 무료로 발급받는
+> 기관코드이며, **등록한 IP에서만** 동작하므로 서버의 공인 IP를 사전 등록해야 합니다.
+> 키가 없어도 나머지(계산 8·분석 2·리소스 열람 1·노동위 화면 검색·빠른인터넷상담·
+> 로컬 아카이브)는 그대로 동작합니다. 산재판례 API(`comwel_precedent_search`)는 별도로
+> 공공데이터포털 키(`DATA_GO_KR_KEY`, 활용신청 필요)를 씁니다.
 
-## 도구 17종
+## 도구 22종
 
 모든 도구 응답에는 **`status` 필드**가 있습니다 — 원천 장애를 "자료 없음"과 구분하기 위한
 계약입니다. `안내` 필드가 함께 오면 그 지시를 따르세요.
@@ -53,14 +54,74 @@ python server.py              # http://127.0.0.1:8735/mcp (PORT·HOST 환경변�
 | `INVALID_INPUT` | 입력 형식 오류 | 아니오 |
 
 
-### 검색 4종 (실데이터 소스, 전부 실측 검증)
+### 검색 9종 (실데이터 소스, 전부 실측 검증)
 
 | 도구 | 소스 | 내용 |
 |---|---|---|
 | `labor_law_article` | law.go.kr | 노동법령 조문(현행/시점별)·부칙·연혁. 통칭 지원(근기법·기간제법 등), 법령ID 자동 필터 |
-| `moel_interpretation_search` | law.go.kr `moelCgmExpc` + `expc` | **고용노동부 행정해석(질의회시)** — "근로기준정책과-3084" 등 실무 문서번호 그대로, 질의요지·회답 전문. 법제처 법령해석례 동시 검색 |
+| `moel_interpretation_search` | law.go.kr `moelCgmExpc` + `expc` | **고용노동부 행정해석(질의회시)** 9,636건 — "근로기준정책과-3084" 등 실무 문서번호 그대로, 질의요지·회답 전문. 법제처 법령해석례 동시 검색 |
 | `labor_case_search` | law.go.kr `prec` | 법원 노동판례(대법원·하급심) 검색·본문(판시사항·판결요지·전문) |
 | `nlrc_decision_search` | nlrc.go.kr 스크래핑 | 노동위원회 판정례 4.4만+ 건 — 판정요지 인라인, 카테고리·판정일·관할위원회 필터 |
+| `committee_decision_search` | law.go.kr `nlrc`·`eiac`·`iaciac`·`decc` **(v1.2)** | **노동위원회 결정문 44,202건**(공식 API — 판정사항·판정요지·판정결과, 키워드 없이 최신순 열람) · 고용보험심사위원회 118건 · 산재재심사위원회 934건(이유 전문) · 행정심판례 35,170건 |
+| `labor_admin_rule_search` | law.go.kr `admrul` **(v1.2)** | 행정규칙(훈령·예규·고시·지침) — 기본 고용노동부 현행 441건. 취업규칙 심사요령, 근로감독관 집무규정, 최저임금·산재보험료율 고시 |
+| `comwel_precedent_search` | data.go.kr 근로복지공단 **(v1.2)** | 산재보험 판례 판결문 전문(2004~2023). 사건결과·사건유형·사고질병구분 필터 — 키워드 검색은 아카이브로 |
+| `moel_counsel_search` | moel.go.kr 빠른인터넷상담 **(v1.2)** | 고용노동부 인터넷 상담 Q&A 104,053건 — 게시판 자체 검색·본문 |
+| `labor_archive_search` | **로컬 SQLite 아카이브 (v1.2)** | 위 자료원 9곳을 한 번에 전문검색 — 원천 장애·인증과 무관, 2글자 검색어·복수 자료원·기간 필터. 아래 [사례 아카이브](#사례-아카이브-v12) 참고 |
+
+### 사례 아카이브 (v1.2)
+
+노동법은 사례가 많을수록 답이 정확해집니다. 호출 가능한 공공 API는 전부 위 도구로 붙였고,
+**API가 없거나 검색이 제한된 원천은 로컬 DB에 적재**해 `labor_archive_search`로 찾습니다.
+
+| 자료원 코드 | 적재 건수 | 수록 기간 |
+|---|---|---|
+| `counsel` 빠른인터넷상담 질의·답변 | 104,031 | 2013-11 ~ 2026-09 |
+| `nlrc` 노동위원회 결정문 (law.go.kr API) | 44,202 | 2006-01 ~ 2026-08 |
+| `comwel` 근로복지공단 산재판례 판결문 전문 | 34,643 | 2004 ~ 2024 (접수연도 기준) |
+| `moel` 고용노동부 행정해석 (전수 미러 — OC 키 없이도 검색됨) | 9,636 | 1965-06 ~ 2026-07 |
+| `decc` 행정심판례 중 노동 관련 (키워드 28개 합집합) | 3,376 | 1996-03 ~ 2026-05 |
+| `iaciac` 산재재심사위원회 결정문 | 934 | 2010-03 ~ 2023-01 |
+| `admrul` 고용노동부 현행 행정규칙 본문 | 441 | 2004-08 ~ 2026-09 |
+| `qnabook` 근로기준법 질의회시집 PDF | 401 | 2018-05 ~ 2023-07 |
+| `eiac` 고용보험심사위원회 결정문 | 118 | 2019-01 ~ 2023-06 |
+
+```bash
+python ingest_archive.py all            # 증분 적재 (처음엔 전체 — law.go.kr 계열 6시간, 상담 15시간 안팎)
+python ingest_archive.py nlrc --limit 100   # 시험 적재
+python ingest_archive.py --stats        # 자료원별 건수·최근 적재일
+refresh_archive.bat                     # 위 all을 로그(data\ingest.log)와 함께 실행
+.\setup_refresh_task.ps1                # (관리자) 매년 1/1·7/1 02:00 자동 갱신 등록 — 6개월 주기
+```
+
+첫 적재 실측(2026-09-03~04): **197,782건 / 974MB**. law.go.kr 계열 약 6시간,
+산재판례 3시간, 빠른인터넷상담 14시간 30분. 실패는 상담 4건(일시 접속 끊김)뿐입니다.
+
+#### 시점 대조 — 오래된 사례를 그대로 인용하지 않게
+
+아카이브는 1965년 행정해석까지 담고 있어 **결론이 이미 뒤집힌 자료**가 섞입니다.
+그래서 검색 결과가 스스로 시점을 밝힙니다.
+
+| 필드 | 뜻 |
+|---|---|
+| `시점범위` | 이번 결과에 포함된 자료의 최초~최근 일자 |
+| `시점주의` | 전환일보다 앞선 자료가 있다는 경고 — 쟁점·전환일·해당 건수·무엇이 바뀌었는지·행동 지시 |
+| `시점참고` | 특정 쟁점에 걸리진 않지만 5년 이상 지난 자료가 있다는 일반 주의 |
+| `일자미상` | 원천이 일자를 주지 않은 자료의 건수 |
+
+전환점 표는 `labor_constants.DOCTRINE_TURNING_POINTS`(11건)에 있고
+`resources/시행중_개정법_기준선.md` 2절과 쌍으로 갱신합니다. 예를 들어 "취업규칙 불이익변경"을
+검색하면 2023-05-11 전합(사회통념상 합리성 폐기)과 2026-06-25 판결(전산망 개별 동의 무효)
+이전 자료에 각각 경고가 붙습니다. 실시간 검색 도구 7종도 같은 주석을 답니다.
+
+산재판례는 원천 API가 선고일자를 주지 않아, 사건번호의 접수연도를 뽑아
+`"2019년경 (사건번호 접수연도 — 선고·의결일 아님)"`으로 표시합니다. 확정 일자가 아닙니다.
+
+- DB는 `data/labor_archive.sqlite` 한 파일(.gitignore). SQLite FTS5에 본문을 글자 2-gram으로
+  색인해 "해고"·"임금" 같은 **2글자 검색어가 그대로 동작**합니다. WAL 모드라 적재 중에도
+  서버가 읽습니다. 중단돼도 다음 실행이 이어 받습니다(본문은 DB에 없는 문서만 요청).
+- 아카이브는 6개월 주기 갱신이므로 응답 `안내`가 **최신 자료는 실시간 도구로 교차 확인**하라고
+  알립니다. `verify_citations`는 행정해석·노동위 문서번호를 아카이브에서 먼저 찾습니다.
+- 원천 부하: 요청 간격 0.3초, 인증·한도 오류 시 즉시 중단, 일시 오류 3회 재시도.
 
 ### 계산 8종 (결정론적, 판례·행정해석 변경 반영)
 
@@ -77,7 +138,7 @@ python server.py              # http://127.0.0.1:8735/mcp (PORT·HOST 환경변�
 | 도구 | 용도 |
 |---|---|
 | `verify_citations` | 인용한 문서번호(판례·행정해석·법령해석례·노동위 판정례)의 실존 여부를 일괄 검증 — 표기로 자료원을 자동 라우팅하고 **확인 / 미확인(유사후보 제시) / 판단불가(원천 장애)** 3값으로 답한다. 호출당 최대 10건 |
-| `check_sources_health` | 자료원 4곳의 응답 상태·소요시간 점검 — "내 서버 문제인지 원천 사이트 문제인지"를 먼저 가른다 |
+| `check_sources_health` | 자료원 10곳(law.go.kr 6종·노동위 화면·빠른인터넷상담·산재판례 API·로컬 아카이브)의 응답 상태·소요시간 점검 — "내 서버 문제인지 원천 사이트 문제인지"를 먼저 가른다 |
 
 ### 분석·설계 2종 + 리소스 열람 1종
 
@@ -107,11 +168,14 @@ python server.py              # http://127.0.0.1:8735/mcp (PORT·HOST 환경변�
 pip install -r requirements.txt          # mcp[cli]<2.0 고정 (2.0에서 FastMCP 제거됨)
 run_server.bat                           # PORT=8735, local_env.bat에서 LAW_API_OC 로드
 python test_mcp_client.py                # 5단계 스모크 테스트 (초기화→도구목록→리소스→계산→실호출)
-python -m pytest tests -q               # 166건 (오프라인만: -m "not live")
+python -m pytest tests -q               # 230건 (오프라인 218: -m "not live")
+python ingest_archive.py all             # 사례 아카이브 적재 (선택 — 위 '사례 아카이브' 참고)
 ```
 
 - `local_env.bat`(미커밋): `set LAW_API_OC=본인_기관코드` 한 줄. nts-mcp-server와
   동일한 키를 쓴다 (같은 서버컴퓨터 → IP 화이트리스트 추가 등록 불필요).
+  산재판례 API를 쓰려면 `set DATA_GO_KR_KEY=공공데이터포털_인증키` 한 줄을 더 넣는다
+  ([활용신청](https://www.data.go.kr/data/15041878/openapi.do) 후 `python comwel.py`로 확인).
 - **run_server.bat은 ASCII + CRLF 유지**: cmd가 CP949로 읽기 때문에 UTF-8 한국어
   주석이 줄바꿈을 삼켜 `call local_env.bat`이 통째로 무시되는 장애를 실제로 겪었다
   (2026-08-28). 경로는 전부 `%~dp0` 절대경로 — 경로 없는 `call local_env.bat`은
@@ -158,10 +222,20 @@ claude.ai → 설정 → 커넥터 → 사용자 지정 커넥터 추가 → 위
 
 ```
 labor-mcp/
-├── server.py             # MCP 서버 본체 (FastMCP) — 도구 17 + 리소스 11 + 프롬프트 2
-├── law_go_kr.py          # law.go.kr Open API 클라이언트 (nts-mcp-server에서 이식)
+├── server.py             # MCP 서버 본체 (FastMCP) — 도구 22 + 리소스 11 + 프롬프트 2
+├── law_go_kr.py          # law.go.kr Open API 클라이언트 (nts-mcp-server에서 이식) + 행정규칙 필터
+├── law_committee.py      # law.go.kr 위원회 결정문·행정심판례 (nlrc/eiac/iaciac/decc)
 ├── moel_expc.py          # 고용노동부 행정해석(moelCgmExpc) 클라이언트
 ├── nlrc.py               # 노동위원회 판정례 스크래퍼 (non-www 필수 — www는 POST 본문 유실)
+├── moel_fastcounsel.py   # 고용노동부 빠른인터넷상담 게시판 클라이언트
+├── comwel.py             # 근로복지공단 산재판례 API (data.go.kr) 클라이언트
+├── qna_pdf.py            # 근로기준법 질의회시집 PDF 파서
+├── archive.py            # 사례 아카이브 (SQLite + FTS5 2-gram 전문검색)
+├── vintage.py            # 검색 결과 시점 대조 (판례 변경 전 자료 경고)
+├── ingest_archive.py     # 아카이브 적재 CLI (증분·재개·스로틀)
+├── refresh_archive.bat   # 6개월 갱신 실행 (ASCII+CRLF)
+├── setup_refresh_task.ps1     # 갱신 작업 스케줄러 등록 (관리자, 1/1·7/1 02:00)
+├── data/                 # (미커밋) labor_archive.sqlite · ingest.log · 원본 PDF
 ├── calculators.py        # 노무 계산 엔진 11함수 (순수 함수)
 ├── payroll.py            # 임금대장 분석기 + 급여테이블 설계기
 ├── labor_constants.py    # 연도별 파라미터(최저임금·산입비율)·법령ID — 매년 갱신 지점
@@ -180,6 +254,7 @@ labor-mcp/
 
 | 시기 | 작업 |
 |---|---|
+| **매년 1/1·7/1 (6개월)** | 사례 아카이브 증분 갱신 — `setup_refresh_task.ps1`로 등록해 두면 자동. `python ingest_archive.py --stats`로 자료원별 최근 적재일 확인, 실패한 자료원은 `refresh_archive.bat` 재실행(이어 받음) |
 | 매년 8월 초 | 최저임금 고시 확인 → `labor_constants.MINIMUM_WAGE`에 이듬해분 추가 + `resources/최저임금_연도별.md` 갱신 (미등록 연도는 계산 도구가 명시적 오류를 내도록 설계됨) |
 | 매년 초 | 고용노동부 표준취업규칙·표준근로계약서 개정본 게시 확인 (moel.go.kr 정책자료실) → hwp 변환 재실행 (`research/hwp_toc.py` 참고) |
 | 수시 | `resources/시행중_개정법_기준선.md`의 "추진 중" 항목(정년연장·주4.5일제·5인 미만 확대·포괄임금 금지) 입법 통과 여부 |
@@ -197,6 +272,15 @@ labor-mcp/
   다만 **개편을 완전히 막을 수는 없으므로** 중요한 판단에는 원천 사이트 교차 확인을 권합니다.
 - **고용노동부 행정해석(moelCgmExpc)은 2026-07 해석까지 수록**을 확인했습니다. 갱신
   주기는 미확인이므로 최신 쟁점은 판례·노동위 판정례로 교차 확인하세요.
+- **사례 아카이브는 적재 시점의 스냅샷입니다.** 6개월 주기로 갱신하므로 그 사이 자료는
+  실시간 도구로 봐야 합니다. DB가 없으면 `labor_archive_search`는 `UPSTREAM_ERROR`와
+  적재 안내를 반환합니다(자료 부존재 아님). 2-gram 색인 특성상 `total`은 근사치입니다.
+- **산재판례 API(`comwel_precedent_search`)는 키워드 검색이 없습니다** — 본문 검색은
+  아카이브(`labor_archive_search sources="산재판례"`)로 하세요. 공공데이터포털 키는
+  '인코딩 키'(`%2B` 포함)·'디코딩 키' 어느 쪽을 넣어도 됩니다(인코딩 키는 자동으로 풀어 보냄).
+  키가 서비스에 활용신청되지 않았으면 `AUTH_ERROR`(등록되지 않은 서비스키)가 납니다.
+- **빠른인터넷상담은 행정해석이 아닙니다.** 담당관 답변이라 실무 참고는 되지만 문서번호가
+  있는 질의회시·판정례만큼의 권위는 없습니다 — 근거로 인용할 때 구분하세요.
 - **연도별 수치는 등록된 연도만 계산됩니다.** 최저임금 등 미등록 연도를 넣으면 옛 수치로
   조용히 계산하지 않고 명시적 오류를 냅니다 — 매년 갱신이 필요합니다(위 체크리스트).
 - **`analyze_payroll`은 대규모 대장에서 적법 건의 상세를 접습니다** (응답 6만 자 초과 시).
@@ -225,8 +309,9 @@ labor-mcp/
 
 ## 변경 이력
 
-버전별 변경 내용은 [CHANGELOG.md](CHANGELOG.md)를 참고하세요. 현재 **v1.1** (2026-09-01)
-— 오류 응답 계약(`status`) 도입과 계산 오답 13건 수정.
+버전별 변경 내용은 [CHANGELOG.md](CHANGELOG.md)를 참고하세요. 현재 **v1.2.1** (2026-09-04)
+— 사례 원천 5곳 추가(노동위 결정문 API·행정규칙·산재판례·빠른인터넷상담·위원회 결정문),
+로컬 사례 아카이브(SQLite+FTS5) 19.7만 건, 6개월 주기 갱신, 검색 결과 시점 대조.
 
 ## 라이선스
 

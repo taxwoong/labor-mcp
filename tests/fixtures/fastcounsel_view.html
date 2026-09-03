@@ -1,0 +1,52 @@
+<div class="board_view_wrap">
+	<div class="b_info">
+		<dl class="w100p">
+			<dt>질의</dt>
+			<dd>무료노무상담 서비스가 있을까요?</dd>
+		</dl>
+		<dl class="w100p">
+			<dt>답변</dt>
+			<dd>귀하께서 근로기준법등 노무관계와 관련된 상담을 받고자 한다면 사업장 소재지 관할 지방고용노동관서(노동청) 고객지원실(민원실)로 방문하시면 상세한 상담을 받으실 수 있습니다.<br/><br/>* 관할 관서 검색 : 고용노동부 홈페이지(www.moel.go.kr) → 상단의 '기관소개' 에서 지방청/고용센터 찾기 → 관할지역별 지방노동관서 홈페이지 바로가기 → 상단 ‘지청소개’에서 찾아오시는길(본청)에서 주소 및 연락처 확인</dd>
+		</dl>
+	</div>
+	
+	<ul class="prevnext">
+		
+			
+				<li class="prev"><span>이전글</span><a href="#"
+					onclick="scEventListener.fnView('202404021434574021000');return false;">개인적사유로 퇴사 후, 동일한 회사에서 한달 계약직으로 근무 시 실업급여를 받을 수</a></li>
+			
+			
+		
+		
+			
+				<li class="next"><span>다음글</span><a href="#"
+					onclick="scEventListener.fnView('202404021548090341000');return false;">22년7월31일~재직중 연차26개 사용 추가 휴무 무급으로 진행 요청
+24년 8월1일 (만 2</a></li>
+			
+			
+		
+	</ul>
+	
+	<div class="board_btns">
+		<button type="button" class="btn1 gray" onclick="scEventListener.fnList();">목록</button>
+	</div>
+	
+</div>
+
+<script type="text/javascript">
+// gblSns.init("board_view_wrap");
+
+var scEventListener = {
+	fnList: function() {
+		$("#inetDcssMngId").val("");
+		$("#frm").attr("action", "/minwon/fastcounsel/fastcounselList.do");
+		$("#frm").submit();
+	},
+	fnView: function(seq) {
+		$("#inetDcssMngId").val(seq);
+		$("#frm").attr("action", "/minwon/fastcounsel/fastcounselView.do");
+		$("#frm").submit();
+	}
+};
+</script>

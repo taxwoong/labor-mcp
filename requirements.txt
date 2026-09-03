@@ -3,3 +3,4 @@ mcp[cli]>=1.2.0,<2.0.0
 requests>=2.31.0
 beautifulsoup4>=4.12.0
 pytest>=8.0.0
+pypdf>=4.0.0        # 근로기준법 질의회시집 PDF 파싱 (qna_pdf.py — 아카이브 적재 시에만 필요)

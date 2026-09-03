@@ -120,6 +120,12 @@ _AUTH_FAIL_HINTS = ("검증에 실패", "인증", "등록되지 않은", "권한
 # law.go.kr이 인식하지 못하는 court 분류어 — 넘기면 오류 없이 0건이 되어 "판례 없음"으로 둔갑한다
 _BAD_COURT_VALUES = {"하위법원", "하급심", "하급법원", "지방법원급", "1심", "2심", "supreme", "lower"}
 
+# 행정규칙(admrul) 검색 필터 — org는 law.go.kr 소관부처 코드, knd는 가이드 문서의 종류 코드
+ADMRUL_ORG_CODES = {
+    "고용노동부": "1492000",
+}
+ADMRUL_KIND_CODES = {"훈령": "1", "예규": "2", "고시": "3", "공고": "4", "지침": "5", "기타": "6"}
+
 # 원문 확인용 공개 URL. law.go.kr XML의 '...상세링크'는 `?OC=<기관코드>`가 박힌 DRF
 # 주소라서 그대로 노출하면 **API 자격증명이 대화 컨텍스트로 새어나간다** — 쓰지 않는다.
 # 아래 두 패턴은 OC 없이 열리는 것을 실측 확인했다 (2026-09-01).
@@ -558,11 +564,37 @@ class LawGoKrClient:
         return out
 
     # ---------- 행정규칙 (훈령·예규·고시·기본통칙) ----------
-    def search_admin_rules(self, keyword: str, display: int = 10, page: int = 1):
-        """target=admrul 행정규칙 검색 — 기본통칙·조사사무처리규정·고시 등."""
-        xml = _get("lawSearch.do", target="admrul", query=keyword, display=display, page=page)
+    def search_admin_rules(self, keyword: str = "", display: int = 10, page: int = 1,
+                           org: str = "", kind: str = "", search_body: bool = False,
+                           sort: str = "", current_only: bool = True):
+        """target=admrul 행정규칙 검색 — 기본통칙·조사사무처리규정·고시 등.
+
+        - org: 소관부처 코드 또는 이름("고용노동부" → 1492000). 비우면 전 부처.
+        - kind: 훈령·예규·고시·공고·지침·기타 (law.go.kr knd 1~6). 비우면 전체.
+        - search_body: True면 본문 검색(search=2), 기본은 규칙명 검색.
+        - sort: "" 관련도 | "ddes" 발령일 내림차순 | "efdes" 시행일 내림차순.
+        - current_only: 현행만(nw=1). False면 연혁 포함(nw=2).
+        - keyword를 비우면 org/kind 필터만으로 전체 목록 (예: 고용노동부 현행 441건, 2026-09-03).
+        반환 dict: {"total", "items": [...]} — 예전 list 반환은 items로 옮겼다.
+        """
+        org_code = ADMRUL_ORG_CODES.get(org.strip(), org.strip()) if org else ""
+        if org and not org_code.isdigit():
+            raise LawInvalidInput(
+                f"소관부처를 인식하지 못했습니다: {org!r} — 이름({', '.join(ADMRUL_ORG_CODES)}) "
+                f"또는 law.go.kr 부처코드 숫자를 넣으세요")
+        knd = ""
+        if kind:
+            knd = ADMRUL_KIND_CODES.get(kind.strip(), kind.strip())
+            if knd not in {"1", "2", "3", "4", "5", "6"}:
+                raise LawInvalidInput(
+                    f"행정규칙 종류를 인식하지 못했습니다: {kind!r} — {', '.join(ADMRUL_KIND_CODES)} 중 하나")
+        params = dict(target="admrul", query=(keyword or "").strip(), display=min(int(display), 100),
+                      page=page, search=2 if search_body else 1, org=org_code, knd=knd,
+                      nw=1 if current_only else 2, sort=sort)
+        xml = _get("lawSearch.do", **params)
+        m = re.search(r"<totalCnt>(\d+)</totalCnt>", xml)
         items = _parse_items(xml, "admrul")
-        return [{
+        rows = [{
             "일련번호": it.get("행정규칙일련번호", ""),
             "행정규칙명": it.get("행정규칙명", ""),
             "종류": it.get("행정규칙종류", ""),
@@ -570,7 +602,10 @@ class LawGoKrClient:
             "발령일자": it.get("발령일자", ""),
             "발령번호": it.get("발령번호", ""),
             "시행일자": it.get("시행일자", ""),
+            "현행연혁": it.get("현행연혁구분", ""),
+            "제개정": it.get("제개정구분명", ""),
         } for it in items]
+        return {"total": int(m.group(1)) if m else len(rows), "items": rows}
 
     def get_admin_rule(self, serial: str, max_chars: int = 10000,
                        article: str = "", start_char: int = 0):

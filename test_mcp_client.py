@@ -25,11 +25,13 @@ HEADERS = {
     "Accept": "application/json, text/event-stream",
 }
 
-# tools/list에 반드시 있어야 하는 도구 — 15종 전부를 검사한다.
+# tools/list에 반드시 있어야 하는 도구 — 22종 전부를 검사한다.
 # 예전에는 8종만 검사해 계산 도구 7종이 통째로 사라져도 스모크 테스트가 통과했다.
 EXPECTED_TOOLS = {
     "labor_law_article", "moel_interpretation_search", "labor_case_search",
     "nlrc_decision_search",
+    "committee_decision_search", "labor_admin_rule_search", "comwel_precedent_search",
+    "moel_counsel_search", "labor_archive_search",
     "check_minimum_wage", "calc_ordinary_avg_wage", "calc_annual_leave",
     "calc_weekly_holiday_pay", "calc_overtime_pay", "calc_severance_pay",
     "calc_dismissal_notice_pay", "calc_wage_cut_limit",

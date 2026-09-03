@@ -21,3 +21,6 @@ files.zip
 # 로컬 전용 문서 — 작업로그에는 기관코드(OC)·운영 URL이 남을 수 있다
 작업로그_*.md
 운영정보*.md
+
+# 사례 아카이브 DB·적재 로그·원본 PDF — 수백 MB, 재생성 가능 (ingest_archive.py)
+data/
