@@ -1,6 +1,6 @@
 @echo off
 rem refresh_archive.bat - incremental refresh of the labor case archive (SQLite).
-rem Task Scheduler runs this every 6 months (see setup_refresh_task.ps1); double-click works too.
+rem Task Scheduler runs this monthly (see setup_refresh_task.ps1); double-click works too.
 rem Keep this file ASCII + CRLF (cmd reads CP949 - see run_server.bat note).
 rem Log: data\ingest.log   Env: local_env.bat (LAW_API_OC, DATA_GO_KR_KEY)
 cd /d %~dp0

@@ -145,6 +145,48 @@ def test_upsert_rejects_unknown_source_or_empty_id(conn):
         archive.upsert(conn, "nlrc", "  ", title="x")
 
 
+class Test재확인대기:
+    """지금은 담을 수 없는 문서(상담 '미완료' 글 등)를 다음 갱신 때 다시 보기 위한 대기열."""
+
+    def test_add_list_and_keep_first_seen(self, conn):
+        archive.add_pending(conn, "counsel", "111", {"제목": "급여 미지급"})
+        first = archive.pending(conn, "counsel")[0]["first_seen"]
+        archive.add_pending(conn, "counsel", "111", {"제목": "급여 미지급(수정)"})
+        rows = archive.pending(conn, "counsel")
+        assert len(rows) == 1
+        assert rows[0]["meta"]["제목"] == "급여 미지급(수정)"    # meta는 갱신
+        assert rows[0]["first_seen"] == first                     # 처음 본 시각은 보존
+        assert rows[0]["tries"] == 0
+
+    def test_bump_and_drop(self, conn):
+        archive.add_pending(conn, "counsel", "222", {})
+        archive.bump_pending(conn, "counsel", "222")
+        archive.bump_pending(conn, "counsel", "222")
+        assert archive.pending(conn, "counsel")[0]["tries"] == 2
+        archive.drop_pending(conn, "counsel", "222")
+        assert archive.pending(conn, "counsel") == []
+
+    def test_purge_after_max_tries(self, conn):
+        archive.add_pending(conn, "counsel", "333", {})
+        for _ in range(archive.PENDING_MAX_TRIES):
+            archive.bump_pending(conn, "counsel", "333")
+        archive.add_pending(conn, "counsel", "444", {})          # 시도 0회 — 남아야 한다
+        assert archive.purge_pending(conn, "counsel") == 1
+        assert [r["doc_id"] for r in archive.pending(conn, "counsel")] == ["444"]
+
+    def test_pending_is_per_source(self, conn):
+        archive.add_pending(conn, "counsel", "1", {})
+        archive.add_pending(conn, "nlrc", "1", {})
+        assert len(archive.pending(conn, "counsel")) == 1
+        assert len(archive.pending(conn, "nlrc")) == 1
+        archive.drop_pending(conn, "counsel", "1")
+        assert len(archive.pending(conn, "nlrc")) == 1
+
+    def test_stats_reports_waiting_count(self, conn):
+        archive.add_pending(conn, "counsel", "9", {})
+        assert archive.stats(conn)["자료원별"]["counsel"]["재확인대기"] == 1
+
+
 def test_open_db_readonly_requires_file(tmp_path, monkeypatch):
     monkeypatch.setenv("LABOR_ARCHIVE_DB", str(tmp_path / "x.sqlite"))
     assert archive.exists_db() is False

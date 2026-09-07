@@ -2,7 +2,7 @@
 """
 ingest_archive.py — 노무 사례 아카이브 적재 CLI (archive.py의 SQLite DB에 원천 자료를 쌓는다)
 
-    python ingest_archive.py all                 # 전 자료원 증분 적재 (6개월 주기 실행용)
+    python ingest_archive.py all                 # 전 자료원 증분 적재 (매월 자동 실행용)
     python ingest_archive.py nlrc moel            # 자료원 지정
     python ingest_archive.py nlrc --limit 200     # 시험 적재 (새 문서 200건에서 중단)
     python ingest_archive.py all --full           # 기존 문서도 다시 받아 갱신
@@ -15,6 +15,11 @@ ingest_archive.py — 노무 사례 아카이브 적재 CLI (archive.py의 SQLit
 증분 규칙: law.go.kr 계열은 목록을 최신순으로 **끝까지** 훑되(목록 호출은 100건 단위라 싸다)
 본문은 DB에 없는 일련번호만 받는다. 빠른인터넷상담은 목록 한 페이지가 2초라 "새 글이 하나도
 없는 페이지"를 만나면 멈춘다. --full이면 전부 다시 받는다.
+
+재확인 대기(pending_recheck): 지금은 담을 수 없는 글 — 빠른인터넷상담의 '미완료'(답변 전) 글과
+본문 조회에 실패한 글 — 을 적어 두고 **다음 갱신 때 먼저 다시 본다**. 이게 없으면, 나중에
+답변이 달려도 그 글은 목록 깊숙이 밀려나 증분 스캔에 다시 걸리지 않아 영구 누락된다
+(2026-09-07 실측: 최신 200건 중 19건이 미완료 상태).
 
 원천 부하: 요청 간격(--interval, 기본 0.3초)을 지키고, 인증·한도 오류(LawAuthError)가 나면
 그 자료원은 즉시 중단한다. 일시 오류는 3회 재시도 후 건너뛴다.
@@ -262,6 +267,45 @@ class Runner:
         return self._batch("admrul", rows, fetch, mapper)
 
     # ---------- moel.go.kr 빠른인터넷상담 ----------
+    def _counsel_store(self, client, row: dict) -> bool:
+        """상담 글 1건을 본문까지 받아 저장한다. 아직 답변이 없으면 False (저장하지 않음)."""
+        v = client.get(row["id"])
+        if not v.get("답변"):
+            return False
+        body = _join(("질의", v.get("질의")), ("답변", v.get("답변")))
+        archive.upsert(self.conn, "counsel", row["id"], title=(row.get("제목") or "")[:300],
+                       doc_no=row.get("번호", ""), doc_date=row.get("등록일", ""),
+                       org="고용노동부 빠른인터넷상담", summary=(v.get("질의") or "")[:600], body=body)
+        return True
+
+    def _counsel_recheck_pending(self, client) -> int:
+        """지난 갱신 때 '미완료'라 건너뛴 글을 다시 본다 — 답변이 달렸으면 이제 담는다.
+
+        목록 증분 스캔은 앞쪽 몇 페이지만 보므로, 이 재확인이 없으면 그 글들은 답변이
+        달린 뒤에도 영영 들어오지 못한다(갱신마다 수십 건씩 누락).
+        """
+        waiting = archive.pending(self.conn, "counsel")
+        if not waiting:
+            return 0
+        LOG.info("counsel 재확인 대기 %d건 확인 중", len(waiting))
+        added = 0
+        for p in waiting:
+            row = dict(p["meta"] or {}, id=p["doc_id"])
+            try:
+                if self._counsel_store(client, row):
+                    archive.drop_pending(self.conn, "counsel", p["doc_id"])
+                    added += 1
+                else:
+                    archive.bump_pending(self.conn, "counsel", p["doc_id"])
+            except Exception as e:                              # noqa: BLE001
+                archive.bump_pending(self.conn, "counsel", p["doc_id"])
+                LOG.warning("counsel 재확인 실패 %s: %s", p["doc_id"], str(e)[:100])
+        버림 = archive.purge_pending(self.conn, "counsel")
+        self.conn.commit()
+        LOG.info("counsel 재확인 결과: 새로 담음 %d · 아직 미답변 %d · 포기 %d",
+                 added, len(waiting) - added - 버림, 버림)
+        return added
+
     def ingest_counsel(self) -> tuple:
         from moel_fastcounsel import FastCounselClient, FastCounselUpstreamError
         client = FastCounselClient(min_interval=self.throttle.interval)
@@ -269,6 +313,8 @@ class Runner:
         added = failed = 0
         page, total_pages = 1, None
         t0 = time.time()
+        if not self.full:
+            added += self._counsel_recheck_pending(client)
         while True:
             try:
                 res = client.list(page=page, unit=50)
@@ -282,23 +328,32 @@ class Runner:
             if total_pages is None:
                 total_pages = ((res["total"] or 0) + 49) // 50
                 LOG.info("counsel 목록 전체 %s건 (%d페이지)", res["total"], total_pages)
+            미답변 = [r for r in res["items"]
+                    if r["id"] not in known and r.get("답변여부", "") == "미완료"]
+            for r in 미답변:
+                # 지금은 본문이 없다 — 다음 갱신 때 다시 보도록 적어 둔다
+                archive.add_pending(self.conn, "counsel", r["id"],
+                                    {k: r.get(k, "") for k in ("제목", "번호", "등록일")})
             new_rows = [r for r in res["items"] if r["id"] not in known and r.get("답변여부", "") != "미완료"]
             if not res["items"]:
                 break
             if not new_rows and not self.full and page > 1:
-                LOG.info("counsel p%d: 새 글 없음 — 증분 종료", page)
+                LOG.info("counsel p%d: 새 글 없음 — 증분 종료 (미답변 대기 %d건은 기록됨)",
+                         page, len(미답변))
                 break
             for r in new_rows:
                 try:
-                    v = client.get(r["id"])
+                    if not self._counsel_store(client, r):
+                        # 목록엔 '답변완료'인데 본문이 비어 있는 경우 — 다음에 다시 본다
+                        archive.add_pending(self.conn, "counsel", r["id"],
+                                            {k: r.get(k, "") for k in ("제목", "번호", "등록일")})
+                        continue
                 except Exception as e:                          # noqa: BLE001
                     failed += 1
                     LOG.error("counsel %s 본문 실패: %s", r["id"], str(e)[:120])
+                    archive.add_pending(self.conn, "counsel", r["id"],
+                                        {k: r.get(k, "") for k in ("제목", "번호", "등록일")})
                     continue
-                body = _join(("질의", v.get("질의")), ("답변", v.get("답변")))
-                archive.upsert(self.conn, "counsel", r["id"], title=r.get("제목", "")[:300],
-                               doc_no=r.get("번호", ""), doc_date=r.get("등록일", ""), org="고용노동부 빠른인터넷상담",
-                               summary=(v.get("질의") or "")[:600], body=body)
                 added += 1
                 known.add(r["id"])
                 if added % 50 == 0:

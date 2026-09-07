@@ -11,7 +11,7 @@ server.py — 노무 특화 MCP 서버 (labor-mcp)
 구성: 검색 도구 9(실시간 8 + 로컬 아카이브 1) + 계산 도구 8 + 분석·설계 도구 2
       + 리소스 열람 도구 1 + 검증·상태 2 = 22개
       + 정적 리소스 11종(labor:// URI) + 검토 프롬프트 2종
-사례 아카이브: archive.py(SQLite+FTS5) — ingest_archive.py로 적재, 6개월 주기 갱신
+사례 아카이브: archive.py(SQLite+FTS5) — ingest_archive.py로 적재, 매월 1일 자동 갱신
 
 역할 분담 원칙: 근로계약서·취업규칙 같은 '문서'는 Claude가 직접 읽고 판단하며
 이 서버는 체크리스트·근거·계산만 공급한다. 반대로 임금대장 같은 '표 데이터'는
@@ -571,7 +571,7 @@ def labor_archive_search(
 
     적재 자료원(sources 값): 노동위원회(nlrc) · 행정해석(moel) · 고용보험심사위원회(eiac) ·
     산재재심사위원회(iaciac) · 행정심판(decc) · 행정규칙(admrul) · 빠른인터넷상담(counsel) ·
-    질의회시집(qnabook) · 산재판례(comwel). 6개월 주기로 증분 갱신되므로 **최신 자료는 실시간
+    질의회시집(qnabook) · 산재판례(comwel). 매월 1일 증분 갱신되므로 **갱신 직전 며칠치는 실시간
     도구로 교차 확인**할 것. 2글자 검색어("해고")가 되고 어절은 AND. 결과에는 발췌만 오므로
     본문은 source+doc_id로 다시 호출한다.
 
@@ -603,7 +603,7 @@ def labor_archive_search(
         res = archive.search(conn, keyword, sources=sources, date_from=date_from, date_to=date_to,
                              limit=limit, offset=offset, latest_first=latest_first)
         res["안내"] = ("발췌만 표시됨 — 본문은 source=<자료원>, doc_id=<doc_id>로 재호출. "
-                     "아카이브는 6개월 주기 갱신이므로 최신 자료는 실시간 도구로 교차 확인. "
+                     "아카이브는 매월 1일 갱신이므로 최신 자료는 실시간 도구로 교차 확인. "
                      "**인용 시 각 항목의 '일자'를 함께 밝히고, '시점주의'가 있으면 그 지시를 따를 것.**")
         return res
     finally:

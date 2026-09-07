@@ -90,7 +90,22 @@ CREATE TABLE IF NOT EXISTS ingest_state(
     added       INTEGER NOT NULL DEFAULT 0,
     note        TEXT NOT NULL DEFAULT ''
 );
+-- 지금은 담을 수 없지만 나중에 다시 봐야 하는 문서 (빠른인터넷상담의 '미완료' 글 등).
+-- 목록에서 건너뛰기만 하면, 나중에 답변이 달려도 그 글은 이미 목록 깊숙이 밀려나 있어
+-- 증분 스캔(앞쪽 몇 페이지)에 다시 걸리지 않는다 — 갱신할 때마다 수십 건씩 영구 누락됐다.
+CREATE TABLE IF NOT EXISTS pending_recheck(
+    source     TEXT NOT NULL,
+    doc_id     TEXT NOT NULL,
+    meta       TEXT NOT NULL DEFAULT '{}',
+    first_seen TEXT NOT NULL,
+    last_try   TEXT NOT NULL DEFAULT '',
+    tries      INTEGER NOT NULL DEFAULT 0,
+    PRIMARY KEY(source, doc_id)
+);
 """
+
+# 이 횟수만큼 다시 확인해도 담을 수 없으면 포기한다 (매달 갱신 기준 1년)
+PENDING_MAX_TRIES = 12
 
 _TOKEN_RE = re.compile(r"[0-9A-Za-z가-힣]+")
 
@@ -247,6 +262,49 @@ def upsert(conn: sqlite3.Connection, source: str, doc_id: str, *, title: str = "
 
 def known_ids(conn: sqlite3.Connection, source: str) -> set:
     return {r[0] for r in conn.execute("SELECT doc_id FROM docs WHERE source=?", (source,))}
+
+
+def add_pending(conn: sqlite3.Connection, source: str, doc_id: str,
+                meta: Optional[dict] = None) -> None:
+    """다음 갱신 때 다시 볼 문서로 적어 둔다. 이미 있으면 first_seen을 보존한다."""
+    conn.execute(
+        "INSERT INTO pending_recheck(source, doc_id, meta, first_seen) VALUES(?,?,?,?) "
+        "ON CONFLICT(source, doc_id) DO UPDATE SET meta=excluded.meta",
+        (source, str(doc_id), json.dumps(meta or {}, ensure_ascii=False),
+         time.strftime("%Y-%m-%dT%H:%M:%S")))
+
+
+def pending(conn: sqlite3.Connection, source: str) -> list:
+    """재확인 대기 목록 — [{doc_id, meta, first_seen, tries}] (오래 기다린 것부터)."""
+    rows = conn.execute(
+        "SELECT doc_id, meta, first_seen, tries FROM pending_recheck WHERE source=? "
+        "ORDER BY first_seen", (source,)).fetchall()
+    out = []
+    for r in rows:
+        try:
+            meta = json.loads(r["meta"] or "{}")
+        except ValueError:
+            meta = {}
+        out.append({"doc_id": r["doc_id"], "meta": meta, "first_seen": r["first_seen"],
+                    "tries": r["tries"]})
+    return out
+
+
+def drop_pending(conn: sqlite3.Connection, source: str, doc_id: str) -> None:
+    conn.execute("DELETE FROM pending_recheck WHERE source=? AND doc_id=?", (source, str(doc_id)))
+
+
+def bump_pending(conn: sqlite3.Connection, source: str, doc_id: str) -> None:
+    conn.execute("UPDATE pending_recheck SET tries=tries+1, last_try=? WHERE source=? AND doc_id=?",
+                 (time.strftime("%Y-%m-%dT%H:%M:%S"), source, str(doc_id)))
+
+
+def purge_pending(conn: sqlite3.Connection, source: str,
+                  max_tries: int = PENDING_MAX_TRIES) -> int:
+    """오래도록 담기지 않은 항목을 버린다. 반환: 버린 개수."""
+    cur = conn.execute("DELETE FROM pending_recheck WHERE source=? AND tries>=?",
+                       (source, int(max_tries)))
+    return cur.rowcount or 0
 
 
 def set_state(conn: sqlite3.Connection, source: str, status: str, added: int = 0, note: str = ""):
@@ -412,6 +470,9 @@ def stats(conn: sqlite3.Connection) -> dict:
                                  "최근추가": r["added"]})
         if r["note"]:
             per[r["source"]]["비고"] = r["note"]
+    for r in conn.execute("SELECT source, count(*) n FROM pending_recheck GROUP BY source"):
+        if r["source"] in per:
+            per[r["source"]]["재확인대기"] = r["n"]
     total = conn.execute("SELECT count(*) FROM docs").fetchone()[0]
     out = {"총건수": total, "자료원별": per}
     try:

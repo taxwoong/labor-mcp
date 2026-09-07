@@ -90,7 +90,7 @@ python ingest_archive.py all            # 증분 적재 (처음엔 전체 — la
 python ingest_archive.py nlrc --limit 100   # 시험 적재
 python ingest_archive.py --stats        # 자료원별 건수·최근 적재일
 refresh_archive.bat                     # 위 all을 로그(data\ingest.log)와 함께 실행
-.\setup_refresh_task.ps1                # (관리자) 매년 1/1·7/1 02:00 자동 갱신 등록 — 6개월 주기
+.\setup_refresh_task.ps1                # (관리자) 매월 1일 02:00 자동 갱신 등록
 ```
 
 첫 적재 실측(2026-09-03~04): **197,782건 / 974MB**. law.go.kr 계열 약 6시간,
@@ -119,7 +119,7 @@ refresh_archive.bat                     # 위 all을 로그(data\ingest.log)와 
 - DB는 `data/labor_archive.sqlite` 한 파일(.gitignore). SQLite FTS5에 본문을 글자 2-gram으로
   색인해 "해고"·"임금" 같은 **2글자 검색어가 그대로 동작**합니다. WAL 모드라 적재 중에도
   서버가 읽습니다. 중단돼도 다음 실행이 이어 받습니다(본문은 DB에 없는 문서만 요청).
-- 아카이브는 6개월 주기 갱신이므로 응답 `안내`가 **최신 자료는 실시간 도구로 교차 확인**하라고
+- 아카이브는 매월 1일 갱신이므로 응답 `안내`가 **갱신 직전 자료는 실시간 도구로 교차 확인**하라고
   알립니다. `verify_citations`는 행정해석·노동위 문서번호를 아카이브에서 먼저 찾습니다.
 - 원천 부하: 요청 간격 0.3초, 인증·한도 오류 시 즉시 중단, 일시 오류 3회 재시도.
 
@@ -233,8 +233,8 @@ labor-mcp/
 ├── archive.py            # 사례 아카이브 (SQLite + FTS5 2-gram 전문검색)
 ├── vintage.py            # 검색 결과 시점 대조 (판례 변경 전 자료 경고)
 ├── ingest_archive.py     # 아카이브 적재 CLI (증분·재개·스로틀)
-├── refresh_archive.bat   # 6개월 갱신 실행 (ASCII+CRLF)
-├── setup_refresh_task.ps1     # 갱신 작업 스케줄러 등록 (관리자, 1/1·7/1 02:00)
+├── refresh_archive.bat   # 월 1회 갱신 실행 (ASCII+CRLF)
+├── setup_refresh_task.ps1     # 갱신 작업 스케줄러 등록 (관리자, 매월 1일 02:00)
 ├── data/                 # (미커밋) labor_archive.sqlite · ingest.log · 원본 PDF
 ├── calculators.py        # 노무 계산 엔진 11함수 (순수 함수)
 ├── payroll.py            # 임금대장 분석기 + 급여테이블 설계기
@@ -254,7 +254,7 @@ labor-mcp/
 
 | 시기 | 작업 |
 |---|---|
-| **매년 1/1·7/1 (6개월)** | 사례 아카이브 증분 갱신 — `setup_refresh_task.ps1`로 등록해 두면 자동. `python ingest_archive.py --stats`로 자료원별 최근 적재일 확인, 실패한 자료원은 `refresh_archive.bat` 재실행(이어 받음) |
+| **매월 1일 (자동)** | 사례 아카이브 증분 갱신 — `setup_refresh_task.ps1`로 등록해 두면 자동. `python ingest_archive.py --stats`로 자료원별 최근 적재일 확인, 실패한 자료원은 `refresh_archive.bat` 재실행(이어 받음) |
 | 매년 8월 초 | 최저임금 고시 확인 → `labor_constants.MINIMUM_WAGE`에 이듬해분 추가 + `resources/최저임금_연도별.md` 갱신 (미등록 연도는 계산 도구가 명시적 오류를 내도록 설계됨) |
 | 매년 초 | 고용노동부 표준취업규칙·표준근로계약서 개정본 게시 확인 (moel.go.kr 정책자료실) → hwp 변환 재실행 (`research/hwp_toc.py` 참고) |
 | 수시 | `resources/시행중_개정법_기준선.md`의 "추진 중" 항목(정년연장·주4.5일제·5인 미만 확대·포괄임금 금지) 입법 통과 여부 |
@@ -272,7 +272,7 @@ labor-mcp/
   다만 **개편을 완전히 막을 수는 없으므로** 중요한 판단에는 원천 사이트 교차 확인을 권합니다.
 - **고용노동부 행정해석(moelCgmExpc)은 2026-07 해석까지 수록**을 확인했습니다. 갱신
   주기는 미확인이므로 최신 쟁점은 판례·노동위 판정례로 교차 확인하세요.
-- **사례 아카이브는 적재 시점의 스냅샷입니다.** 6개월 주기로 갱신하므로 그 사이 자료는
+- **사례 아카이브는 적재 시점의 스냅샷입니다.** 매월 1일 갱신하므로 그 사이 자료는
   실시간 도구로 봐야 합니다. DB가 없으면 `labor_archive_search`는 `UPSTREAM_ERROR`와
   적재 안내를 반환합니다(자료 부존재 아님). 2-gram 색인 특성상 `total`은 근사치입니다.
 - **산재판례 API(`comwel_precedent_search`)는 키워드 검색이 없습니다** — 본문 검색은
@@ -311,7 +311,7 @@ labor-mcp/
 
 버전별 변경 내용은 [CHANGELOG.md](CHANGELOG.md)를 참고하세요. 현재 **v1.2.1** (2026-09-04)
 — 사례 원천 5곳 추가(노동위 결정문 API·행정규칙·산재판례·빠른인터넷상담·위원회 결정문),
-로컬 사례 아카이브(SQLite+FTS5) 19.7만 건, 6개월 주기 갱신, 검색 결과 시점 대조.
+로컬 사례 아카이브(SQLite+FTS5) 19.8만 건, 매월 자동 갱신, 검색 결과 시점 대조.
 
 ## 라이선스
 
