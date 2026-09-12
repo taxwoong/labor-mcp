@@ -1,0 +1,604 @@
+<html><body><div class="data-view" id="reportPrint">
+	<div class="data-view-info">
+		<table>
+			<caption>게시물 상세 정보</caption>
+			<colgroup>
+				<col>
+			</colgroup>
+			<tbody>
+				<tr class="row-view-title">
+					<th scope="row" class="hide">제목</th>
+					<td class="view-title acenter">&lt;&nbsp;국세청 경정 근로소득을 근거로 특례변경된 기준소득월액의 변경을 요청하나 인정되지 않은 사례&nbsp;&gt;</td>
+				</tr>
+				<tr>
+					<th scope="row" class="hide">결정</th>
+					<td class="acenter">결정:&nbsp;<span class="txt-bold txt-red">기각</span></td>
+				</tr>
+			</tbody>
+		</table>
+	</div>
+	
+	<div class="data-view-contents">
+		<strong class="blind">상세내용</strong>
+		<div class="view-contents-wrap acenter">
+			<span class="txt-bold txt-large">처분내용</span><br>법인사업장인 청구인은 2019년 4월 근로자의 기준소득월액 특례변경 신청서를 제출하였고 공단은 이에 따라 기준소득월액을 변경함<br>이후 청구인은 소속 근로자의 2018년 귀속 근로소득금액 경정자료를 근거로 2018년도 기준소득월액 변경을 요청하였으나 공단은 이를 거부함<br><br>
+			<span class="txt-bold txt-large">청구인주장</span><br>근로자의 2018년 근로소득 수정신고를 하였고, 이를 근거로 건강보험료 등을 정산받았으므로 연금보험료도 정산하여 줄 것을 주장<br><br>
+			
+			<span class="txt-bold txt-large">쟁점</span><br>국세청 근로소득 경정자료를 근거로 특례변경된 기준소득월액을 변경할 수 있는지 여부<br><br>
+			<span class="txt-bold txt-large">판단</span><br>사업장가입자의 가입기간 중 기준소득월액은 매년 공단이 결정하여 해당연도 7월부터 다음연도 6월까지 적용하는데, 기준소득월액이 결정된 이후에는 실제 소득이 변경되더라도 기준소득월액의 변경을 신청할 수 있는 제도가 없어 보험료 부과기준의 합리성을 높이고자 사업장가입자가 기준소득월액의 변경을 신청할 수 있는 기준소득월액 특례변경제도가 시행되었고, 특례변경된 기준소득월액은 추후 과세자료 등을 통해 확인되는 소득과 신고된 소득의 일치여부를 확인하여 정산하고 있으므로 기준소득월액 특례변경이 적용되는 기간 중에는 가입기간 중의 기준소득월액 결정방법이 적용되지 않는 것이 타당함<br>가입기간 중의 기준소득월액 결정의 기준이 되는 소득과 종사기간은 전년도이므로 청구인이 기준소득월액 변경을 요청하는 근로자의 2018년 귀속 근로소득 경정자료는 2019년 7월부터 2020년 6월까지 적용되어야 할 것이나 해당 근로자는 2019년 기준소득월액 특례변경 신청을 하여 변경된 기준소득월액이 2020년 6월까지 적용되므로 가입기간 중의 기준소득월액 결정방법을 적용하지 않는 것이 타당하다고 판단함<br><br>
+		</div>
+	</div>
+</div>
+
+<div class="bottom-btns">
+	<a href="javascript:fncGoBbsList();" class="btn big">목록</a>
+	<a href="javascript:fncPrintPage('reportPrint');" class="btn white big">출력하기</a>
+</div>
+
+<form id="searchForm" name="searchForm" method="post">
+	<input type="hidden" name="srclPrdtLclsfCd" id="srclPrdtLclsfCd" value="1" />
+	<input type="hidden" name="pageIndex" id="pageIndex" value="1" />
+	<input type="hidden" name="searchGbu" id="searchGbu" value="" />
+	<input type="hidden" name="searchText" id="searchText" value="" />
+</form>
+
+<script>
+$(document).ready(function(){
+	commonUI.tabMenu();
+});
+	// 목록 이동
+	function fncGoBbsList() {
+		$("#searchForm").attr("action", "/pnsinfo/ntpsklg/getOHAF0096M0List.do").submit();
+	}
+	
+	// 상세 이동
+	function fncGoBbsDetail(pstId) {
+		$("#pstId").val(pstId);
+		$("#searchForm").attr("action", "/pnsinfo/ntpsklg/getOHAF0096M1.do").submit();
+	}
+	
+	var contentsDiv;
+	var retBody;
+	
+	// 출력하기
+	function fncPrintPage(div) {
+		contentsDiv = document.getElementById(div);
+		
+		window.onbeforeprint = beforePrint;
+		window.onafterprint = afterPrint;
+		window.print();
+	}
+	
+	function beforePrint(){
+		retBody = document.body.innerHTML;
+		document.body.innerHTML = contentsDiv.innerHTML;
+	}
+
+	function afterPrint(){
+		document.body.innerHTML = retBody;
+	}
+	
+	// 카테고리 검색
+	function fncSearchCateList(cate) {
+		$("#srclPrdtLclsfCd").val(cate);
+		$("#pageIndex").val(1);
+		$("#searchGbu").val("");
+		$("#searchText").val("");
+		fncGoBbsList();
+	}
+</script>
+				</div>
+				<!-- 담당자정보 -->
+				<div class="page-part-info">
+					<div class="copy">
+						<img src="/images/common/partInfo_copy.png" alt="국민을 든든하게 연금을 튼튼하게">
+					</div>
+					<div class="part">
+						<h4 class="blind">담당</h4>
+						<div class="part-person">
+							<p>국민연금 고객센터 (1355)</p>
+						</div>
+					</div>
+				</div>
+				
+				
+
+
+
+
+
+
+
+
+
+
+
+<div class="page-satisfaction">
+	<form name="satisfactionForm" id="satisfactionForm" method="post">
+		<div class="satis-wrap">
+			<h4 class="blind">현재페이지 만족도 조사</h4>
+			<p class="satis-qestion">현재 페이지의 내용과 사용 편의성에 대해 만족하십니까?</p>
+			<div class="satis-form">
+				<div class="opt-group">
+					<div class="opt-item"><input type="radio" name="dgstfnScr" id="dgstfnScr1" value="1" checked><label class="opt1" for="dgstfnScr1"><span>매우만족</span></label></div>
+					<div class="opt-item"><input type="radio" name="dgstfnScr" id="dgstfnScr2" value="2"><label class="opt2" for="dgstfnScr2"><span>만족</span></label></div>
+					<div class="opt-item"><input type="radio" name="dgstfnScr" id="dgstfnScr3" value="3"><label class="opt3" for="dgstfnScr3"><span>보통</span></label></div>
+					<div class="opt-item"><input type="radio" name="dgstfnScr" id="dgstfnScr4" value="4"><label class="opt4" for="dgstfnScr4"><span>불만족</span></label></div>
+					<div class="opt-item"><input type="radio" name="dgstfnScr" id="dgstfnScr5" value="5"><label class="opt5" for="dgstfnScr5"><span>매우불만족</span></label></div>
+				</div>
+				<!-- <input type="hidden" name="real" value="Y"> -->
+				<input type="hidden" name="hmpgCd" value="01">
+				<input type="hidden" name="menuId" value="MN25000008">
+				<input type="hidden" name="menuLnkgUrlAddr" value="/pnsinfo/ntpsklg/getOHAF0096M1.do">
+				
+			</div>
+			<div class="input-textarea">
+				<textarea name="dgstfnCn" id="dgstfnCn" class="row3" placeholder="기타 제안 사항이 있다면 작성해주세요. (선택 입력)" onkeyup="inputCheckLen(this, 'dgstfnCnLen', 4000)" title="제안 사항 입력"></textarea>
+				<button type="button" class="btn-ok" onclick="fncSaveDgstfn();">확인</button>
+				<div class="text-length-status">
+					현재 <span id="dgstfnCnLen" class="len-current">0</span>byte / 최대<span class="len-max"> 4000byte</span>(한글 2000자, 영문 4000자)
+				</div>
+			</div>
+		</div>
+	</form>
+</div>
+
+
+<script>
+function fncSaveDgstfn() {
+	var jsonData = {};
+	
+	$.each($("#satisfactionForm").serializeArray(), function(index, item){
+		jsonData[item.name] = item.value;
+	});
+	
+	if (!$("#satisfactionForm [name=dgstfnScr]:checked").val()) {
+		var msg = "만족도 항목을 선택하세요.";
+		commonUI.msgPop ? commonUI.msgPop("alert", msg) : alert(msg);
+		return false;
+	}
+	
+	$.httpAjax("/saveDgstfn.do", jsonData, "", function(response) { // 콜백
+
+		if (response.result == undefined){
+			commonUI.privacyPop(response);
+		}
+		commonUI.msgPop ? commonUI.msgPop("alert", response.msg, "", function(){$("#dgstfnCn").val(""); $("#dgstfnCnLen").text("0");}) : alert(response.msg);
+	}, function(response) { // 에러 콜백
+		console.log("fncSaveDgstfnCallBackErr   ....loading...", response);
+		commonUI.msgPop ? commonUI.msgPop("alert", response.msg) : alert(response.msg);
+	});
+}
+</script>
+			</div>
+		</section>
+		<footer id="footer">
+		
+			
+
+
+
+
+
+
+
+
+
+<div class="footer-sites">
+	<div class="footer-inner">
+		<div class="footer-related-site">
+			<button type="button" class="btn-open" title="목록 닫힘">직원</button>
+			<div class="site-lists">
+				<ul>
+					<li><a href="http://mail.nps.or.kr" target="_blank"
+						title="새창열림">직원용 이메일</a>
+					</li>
+					<!--20260629 한시적 사용차단 요청 
+					<li><a href="javascript:goMenuPage('MN24001515', '/comm/footer/getOHAH9999M4.do', '국민연금 자문단','N');">국민연금 자문단</a>
+					</li> -->
+				</ul>
+			</div>
+		</div>
+		<div class="footer-related-site">
+			<button type="button" class="btn-open" title="목록 닫힘">위원회</button>
+			<div class="site-lists">
+				<ul>
+					<li><a href="/cmmt/main.do?hmpgGubun=04" target="_blank"
+						title="새창열림">비상임이사</a></li>
+					<li><a href="/cmmt/main.do?hmpgGubun=02" target="_blank"
+						title="새창열림">심사위원회</a></li>
+					<li><a href="/cmmt/main.do?hmpgGubun=03" target="_blank"
+						title="새창열림">장애정도심사위원회</a></li>
+				</ul>
+			</div>
+		</div>
+		<div class="footer-related-site">
+			<button type="button" class="btn-open" title="목록 닫힘">업무별
+				홈페이지</button>
+			<div class="site-lists">
+				<ul>
+					<li><a href="https://edi.nps.or.kr/" title="국민연금 EDI(새창열림)"
+						target="_blank">국민연금 EDI</a></li>
+					<li><a href="https://fund.nps.or.kr/" title="기금운용본부(새창열림)"
+						target="_blank">기금운용본부</a></li>
+					<li><a href="javascript:setSsoCookie('https://csa.nps.or.kr/');"
+						title="NPS 중앙노후준비지원센터(새창열림)">중앙노후준비지원센터</a></li>
+					<li><a href="https://pensioner.nps.or.kr/" title="연금수급자(새창열림)"
+						target="_blank">연금수급자</a></li>
+					<li><a href="https://institute.nps.or.kr/" title="국민연금연구원(새창열림)"
+						target="_blank">국민연금연구원</a></li>
+					<li><a href="/esg/main.do" title="지속가능경영(새창열림)"
+						target="_blank">지속가능경영</a></li>
+					<li><a href="/das/main.do" title="장애심사(새창열림)" target="_blank">장애심사</a></li>
+					<li><a href="https://www.ableservice.or.kr/" title="장애인활동지원(새창열림)"
+						target="_blank">장애인활동지원</a></li>
+					<li><a href="/comm/pop/getOHAH0015P1.do" title="기초연금(새창열림)"
+						onclick="window.open(this.href,'name1','width=865,height=900,toolbar=no,menubar=no,scrollbars=yes,resizable=no,location=no,directories=no,status=no');return false;"
+						target="_blank">기초연금</a></li>
+					<li><a href="https://www.4insure.or.kr"
+						title="4대보험 정보연계(새창열림)" target="_blank">4대보험정보연계</a></li>
+					<li><a href="https://www.ppsl.or.kr" title="공적연금 연계(새창열림)"
+						target="_blank">공적연금 연계</a></li>
+					<li><a href="http://insurancesupport.or.kr"
+						title="두루누리 사회보험(새창열림)" target="_blank">두루누리사회보험</a></li>
+					<li><a href="https://www.cheongpungresort.co.kr/web/kor/asp/index/index.asp"
+						title="청풍리조트(새창열림)" target="_blank">청풍리조트</a></li>
+					<li><a href="https://data.nps.or.kr" title="국민연금 빅데이터 포털(새창열림)" target="_blank">국민연금 빅데이터 포털</a></li>
+					<!-- <li><a href="http://www.mohw.go.kr" target="_blank" title="새창열림">보건복지부</a></li>
+					<li><a href="http://www.nhis.or.kr" target="_blank" title="새창열림">국민건강보험공단</a></li>
+					<li><a href="https://edi.nps.or.kr" target="_blank" title="새창열림">국민연금 EDI</a></li>
+					<li><a href="/jsppage/publicPension/publicPension/main.html" target="_blank" title="새창열림">공적연금 연계</a></li>
+					<li><a href="http://www.4insure.or.kr" target="_blank" title="새창열림">4대보험 정보연계</a></li>
+					<li><a href="https://www.cheongpungresort.co.kr/" target="_blank" title="새창열림">청풍리조트</a></li> -->
+				</ul>
+			</div>
+		</div>
+	</div>
+</div>
+<div class="footer-container">
+	<div class="footer-inner">
+		<div class="row1">
+			<div class="footer-logo">
+				<div class="logo">국민연금</div>
+			</div>
+			<div class="footer-contact">
+				<p class="address">54870 전북특별자치도 전주시 덕진구 기지로 180 (만성동, 국민연금)</p>
+				<div class="footer-call">
+					<p>
+						<strong>국민연금 고객센터: 국번없이 1355<span>(유료, 평일 09시~18시)</span></strong>
+						<!-- 모바일용 함수 호출 -->
+						<!-- a href="/comm/footer/getOHAH0001M0.do" target="_blank" title="고객센터 ARS 구성도(새창열림)" class="btn ic-blank" onclick="window.open(this.href,'','toolbar=no,location=no,directories=no,status=no,menubar=no,scrollbars=yes,resizable=no,width=760,height=800');return false;">고객센터 ARS 구성도</a-->
+						<a
+							href="javascript:fnOpenBrws('/comm/footer/getOHAH0001M0.do','_blank','toolbar=no,location=no,directories=no,status=no,menubar=no,scrollbars=yes,resizable=no,width=760,height=800')"
+							title="고객센터 ARS 구성도(새창열림)" class="btn line-gray xsmall" returnfalse;">고객센터
+							ARS 구성도</a>
+					</p>
+					<p>
+						<strong>해외이용: +82-63-713-6900<span>(유료, 평일
+								09시~18시)</span></strong>
+					</p>
+				</div>
+				<p class="guide-txt">본 홈페이지에 게시된 이메일 주소가 자동수집되는 것을 허용하지 않으며, 위반시
+					정보통신망법에 의해 처벌될 수 있습니다.</p>
+				<a
+					href="javascript:fnOpenBrws('/comm/footer/getOHAH0002M0.do','_blank','toolbar=no,location=no,directories=no,status=no,menubar=no,scrollbars=yes,resizable=no,width=760,height=700')"
+					title="영상수어상담(새창열림)" class="sign-language">영상수어상담</a>
+			</div>
+
+			<div class="footer-etc">
+				<ul class="footer-links">
+					<!-- 모바일용 함수 호출 -->
+					<!-- li><a href="/comm/footer/getOHAH0008M0.do" title="새창열림" onclick="window.open(this.href,'name','width=730,height=900,toolbar=no,menubar=no,scrollbars=yes,resizable=no,location=no,directories=no,status=no');return false;">찾아오시는길</a></li-->
+					<li><a
+						href="javascript:fnOpenBrws('/comm/footer/getOHAH0008M0.do','_blank','width=730,height=900,toolbar=no,menubar=no,scrollbars=yes,resizable=no,location=no,directories=no,status=no')"
+						title="새창열림" style="font-weight: bold">찾아오시는 길</a></li>
+					<!-- li><a href="http://minwon.nps.or.kr/jsppage/service/npkiDown/index.html" target="_blank" title="새창열림">인증서 모바일로 내보내기</a></li-->
+					<li><a href="/comm/footer/getOHAH0004M0.do"
+						style="font-weight: bold">이용약관</a></li>
+					<li><a href="/comm/footer/getOHAH0006M0List.do"
+						style="font-weight: bold">홈페이지 개선의견</a></li>
+					<li class="auth"><a
+						href="javascript:fnOpenBrws('/raonnx/nxCR/index.jsp','_blank','')"
+						title="새창열림" style="font-weight: bold">인증서 모바일로 내보내기</a></li>
+					<!-- <li><a href="javascript:fnOpenBrws('https://www.nps.or.kr/jsppage/pop/signLanguage.jsp','_blank','toolbar=no,location=no,directories=no,status=no,menubar=no,scrollbars=yes,resizable=no,width=760,height=800')" title="영상수어상담(새창열림)" >영상수어상담</a></li> -->
+				</ul>
+				<div class="footer-sns">
+					<ul>
+						<li><a href="https://www.facebook.com/proNPS" target="_blank"
+							title="새창열림" class="fb">페이스북</a></li>
+						<li><a href="https://instagram.com/npstagram" target="_blank"
+							title="새창열림" class="inst">인스타그램</a></li>
+						<li><a
+							href="https://www.youtube.com/user/NaionalPensionServic"
+							target="_blank" title="새창열림" class="yt">유튜브</a></li>
+						<li><a href="https://blog.naver.com/pro_nps" target="_blank"
+							title="새창열림" class="blog">블로그</a></li>
+						<!-- 						<li><a href="http://post.naver.com/pro_nps" target="_blank" title="새창열림" class="post">포스트</a></li> -->
+						<li><a href="http://www.npsonair.kr/" target="_blank"
+							title="새창열림" class="onair">onAir</a></li>
+						<!-- <li><a href="https://tv.naver.com/npstv" target="_blank" title="새창열림" class="tv">네이버tv</a></li> -->
+					</ul>
+				</div>
+			</div>
+		</div>
+		<div class="row2">
+			<ul class="footer-guide">
+				<li><a href="/comm/footer/getOHAH0003M0.do" class="txt-primary"><strong>개인정보처리방침</strong></a></li>
+				<!-- 모바일용 함수 호출 -->
+				<!-- li><a href="/comm/footer/getOHAH0005M0.do" title="새창열림" onclick="window.open(this.href,'name','width=1030,height=683,toolbar=no,menubar=no,scrollbars=no,resizable=no,location=no,directories=no,status=no');return false;">홈페이지 이용안내</a></li-->
+				<li><a
+					href="javascript:fnOpenBrws('/comm/footer/getOHAH0005M0.do','','width=1030,height=683,toolbar=no,menubar=no,scrollbars=no,resizable=no,location=no,directories=no,status=no')"
+					title="새창열림">홈페이지 이용안내</a></li>
+				<!-- <li><a href="/comm/footer/getOHAH0007M0.do">RSS</a></li> -->
+			</ul>
+			<ul class="footer-mark">
+				<li><a href="/comm/pop/getISO27701.do"
+					onclick="window.open(this.href,'name','width=575,height=954,toolbar=no,menubar=no,scrollbars=no,resizable=no,location=no,directories=no,status=no');return false;"
+					target="_blank" title="새창열림" class="mark-dnv1">개인정보보호 관리체계
+						국제표준인증 ISO2770</a></li>
+				<li><a href="/comm/pop/getISO27001.do"
+					onclick="window.open(this.href,'name','width=575,height=954,toolbar=no,menubar=no,scrollbars=no,resizable=no,location=no,directories=no,status=no');return false;"
+					target="_blank" title="새창열림" class="mark-dnv2">정보보호인증ISO27001</a></li>
+				<!-- <li><span class="mark-privacy">개인정보보호 관리체계 인증</span></li> -->
+				<li><a
+					href="javascript:fnOpenBrws('https://www.wa.or.kr/board/list.asp?search=total&SearchString=www.nps.or.kr&BoardID=0006','_blank','')"
+					title="새창열림" class="mark-web">웹접근성품질마크</a></li>
+				<!-- <li><span class="mark-mweb">모바일 웹접근성품질마크</span></li> -->
+			</ul>
+			<p class="footer-copyright">copyright ⓒ nps.or.kr. all rights
+				reserved.</p>
+		</div>
+	</div>
+</div>
+
+<!-- <script>
+	//관련사이트
+	function fn_colleague() {
+		var linkValue = document.getElementById("site_link2").value;
+		
+		if (linkValue == "nonexecutive_director") {
+			window.open('/getOHAH9999M1.do', '', '');
+		} else if (linkValue == "committee") {
+			window.open('/jsppage/judge/main.jsp', '', '');
+		} else if (linkValue == "committee2") {
+			window.open('/jsppage/disabilityJudge/main.jsp', '', '');
+		} else if (linkValue == "employe_email") {
+			window.open('http://mail.nps.or.kr', '', '');
+		} else if (linkValue == "obstacle") {
+			window.open('/jsppage/welfare/welfare_service_login_01.jsp', 'name', 'width=800,height=700,toolbar=no,menubar=no,scrollbars=auto,resizable=yes,location=no,directories=no,status=no');
+		} else if (linkValue == "citizenComm") {
+			window.open('/jsppage/citizenComm/news/02_news_01.jsp', '', '');
+		} else if (linkValue == "suggest_pop") {
+			window.open('/jsppage/intro/nps/consult/suggest_form.jsp', 'name', 'width=710,height=620,toolbar=no,menubar=no,scrollbars=yes,resizable=no,location=no,directories=no,status=no');
+		}
+	}
+
+	function fn_site() {
+		var linkValue = document.getElementById("site_link3").value;
+		if (linkValue == "mohw") {
+			window.open('http://www.mohw.go.kr', '', '');
+		} else if (linkValue == "nhis") {
+			window.open('http://www.nhis.or.kr', '', '');
+		} else if (linkValue == "edi") {
+			window.open('https://edi.nps.or.kr', '', '');
+		} else if (linkValue == "public") {
+			window.open('/jsppage/publicPension/publicPension/main.html', 'name1', 'width=980,height=725,toolbar=no,menubar=no,scrollbars=no,resizable=no,location=no,directories=no,status=no');
+		} else if (linkValue == "4insure") {
+			window.open('http://www.4insure.or.kr', '', '');
+		} else if (linkValue == "resort") {
+			window.open('https://www.cheongpungresort.co.kr/web/kor/asp/index/index.asp', '', '');
+		}
+	}
+</script> -->
+
+<script>
+	$(function() {
+		if ('' != '') {
+			$("#mobaTitle").show();
+		} else if ($(".section-contents .page-top .page-name h3").text() != '') {
+			$(".page-title").html(
+					$(".section-contents .page-top .page-name h3").text());
+			$("#mobaTitle").show();
+		} else {
+			$("#mobaTitle").hide();
+		}
+	});
+</script>
+
+<!-- 전자민원 > 권리구제 > 심사청구(개인) 메뉴 접근 모달 -->
+
+
+
+
+
+
+
+
+
+<!-- 심사청구 신청 안내 팝업 -->
+<div class="modal dim" id="modalOHAC0052P2">
+	<div class="modalWrap" style="width: 800px;" tabindex="0">
+		<div class="modal-header">
+			<div class="modal-title">
+				<h3>심사청구 대상 확인</h3>
+			</div>
+		</div>
+		<div class="modal-body">
+			<div class="top-info-box center">
+				<p class="box-title">잠깐, <span class="txt-primary">‘심사청구’</span> 대상인지 알아봅니다.</p>
+				<p class="g-txt txt-large">‘심사청구는 국민연금공단의 처분에 이의가 있는 경우<br>그 처분이 있음을 안 날부터 90일 이내에 이의를 제기하여 권리를 구제받는 절차입니다.’</p>
+			</div>
+			
+			<div class="top-guide-box" style="background: none; border-width: 0px; margin: 30px 0 0 0; padding: 0;">
+				<div class="inner-box ic-nps news">
+					<div class="inner-txt">
+						<p class="sm-title">아래의 단순 안내 등으로 심사청구 대상이 아닌 경우<br>‘고객상담실’, ‘해당지사’ 또는 국민연금 고객센터 (국번없이)1355로 문의하여 주시기 바랍니다.</p>
+					</div>
+				</div>
+			</div>
+			
+			<div class="con-table">
+				<table summary="단순안내, 처분의 신청, 다른기관의 처분등의내용 나열">
+					<caption>심사청구 대상이 아닌 경우 : 단순 안내, 처분의 신청, 다른 기관의 처분을 나타내는 표입니다.</caption>
+					<colgroup>
+						<col class="w25">
+						<col>
+					</colgroup>
+					<thead>
+						<tr>
+							<th colspan="2" scope="col"><span class="txt-red">심사청구 대상이 아닌 경우</span></th>
+						</tr>
+					</thead>
+					<tbody>
+						<tr>
+							<th scope="row">단순 안내</th>
+							<td>
+								<ul class="type1 bu">
+									<li>(직권)가입 안내</li>
+									<li>기준소득월액 변경 <span class="txt-red txt-bold">예정</span> 안내 등 국민연금 제도 안내 및 상담</li>
+								</ul>
+							</td>
+						</tr>
+						<tr>
+							<th scope="row">처분의 신청</th>
+							<td>
+								<ul class="type1 bu">
+									<li>납부예외를 신청하는 경우 등 각종 신고(신청)</li>
+									<li>노령연금, 반환일시금 등 청구관련 문의</li>
+								</ul>
+							</td>
+						</tr>
+						<tr>
+							<th scope="row">다른 기관의 처분</th>
+							<td>
+								<ul class="type1 bu">
+									<li>건강보험공단으로부터 압류 안내문 및 고지서 받은 경우</li>
+									<li>장애인복지법상 장애등급 결정 등</li>
+								</ul>
+							</td>
+						</tr>
+					</tbody>
+				</table>
+			</div>
+			
+			<div class="bottom-btns">
+				<div class="a-right">
+					<a href="/cmuctjng/custdscsn/getOHAD0002M0List.do?menuId=MN24000947" class="btn">고객상담실</a>
+					<a href="/pbcpgdnc/ognzprsn/getOHAG0012M0.do?menuId=MN24001022" class="btn">지사찾기</a>
+				</div>
+			</div>
+			
+			
+			<div class="top-guide-box" style="background: none; border-width: 0px; margin: 7rem 0 0 0; padding: 0;">
+				<div class="inner-box ic-nps news">
+					<div class="inner-txt">
+						<p class="sm-title">국민연금공단으로부터 아래의 처분을 받으신 경우<br>선택하시기 바랍니다.</p>
+					</div>
+				</div>
+			</div>
+			
+			<div class="con-table">
+				<table summary="자격, 급여, 징수, 기타등 처분내용이 포함된 내용">
+					<caption>심사청구 대상이 아닌 경우 : 처분내용, 자격, 급여, 징수, 기타를 나타내는 표입니다.</caption>
+					<colgroup>
+						<col class="w25">
+						<col>
+						<col class="w10">
+					</colgroup>
+					<thead>
+						<tr>
+							<th colspan="3" scope="col">처분내용</th>
+						</tr>
+					</thead>
+					<tbody>
+						<tr>
+							<th rowspan="2" scope="row">자격</th>
+							<td><label for="select1">가입자 자격 취득·상실,  농어업인 인정·불인정</label></td>
+							<td class="acenter"><input type="radio" id="select1" name="selectCB" /></td>
+						</tr>
+						<tr>
+							<td class="line02"><label for="select2">기준소득월액 결정, 납부예외 불인정 등</label></td>
+							<td class="acenter"><input type="radio" id="select2" name="selectCB" /></td>
+						</tr>
+						<tr>
+							<th scope="row">급여</th>
+							<td><label for="select3">연금·일시금 미해당/ 부지급/ 정지/ 변경 등</label></td>
+							<td class="acenter"><input type="radio" id="select3" name="selectCB" /></td>
+						</tr>
+						<tr>
+							<th scope="row">징수</th>
+							<td><label for="select4">반납·추납보험료 부과, 환수결정 등</label></td>
+							<td class="acenter"><input type="radio" id="select4" name="selectCB" /></td>
+						</tr>
+						<tr>
+							<th scope="row">기타</th>
+							<td><label for="select5">그 외 처분이 있는 경우</label></td>
+							<td class="acenter"><input type="radio" id="select5" name="selectCB" /></td>
+						</tr> 						
+					</tbody>
+				</table>
+			</div>
+			
+			<div class="bottom-btns apply">
+				<button type="button" class="btn white modal-close" onclick="fncCloseOHAC0052P2();">취소</button>
+				<button type="button" class="btn" onclick="javascript:fncCheckOHAC0052P2(this);">확인</button>
+			</div>
+		</div>
+		
+		<button type="button" class="modal-close" onclick="fncCloseOHAC0052P2();">전자민원처리 상세내역 조회 창닫기</button>
+	</div>
+</div>
+<script type="text/javascript">
+	function fncCheckOHAC0052P2(target) {
+		if ($("[name=selectCB]:checked").length > 0) {
+			location.href = "/elctcvlcpt/dclraply/getOHAC0052M0.do?menuId=MN24000942";
+		} else {
+			commonUI.msgPop("alert", "처분내용을 선택해 주세요.<br>처분내용은 필수 선택 항목입니다.");
+		}
+	}
+	
+	function fncOpenOHAC0052P2() {
+		$("#modalOHAC0052P2 [name=selectCB]").prop("checked", false);
+		commonUI.modal("#modalOHAC0052P2", document.activeElement);
+	}
+	
+	function fncCloseOHAC0052P2() {
+		commonUI.modalClose('#modalOHAC0052P2');
+	}
+</script>
+<!-- // 심사청구 신청 안내 팝업 -->
+
+<!-- 로그인 이동 모달 -->
+<div class="modal dim" id="loginRequiredGuide" style="z-index: 9999;">
+	<div class="modalWrap login-modalWrap">
+		<div class="modal-body">
+			<div class="login-required-guide">
+				<strong class="title"><span class="loginType">로그인</span>이
+					필요한 서비스 입니다.</strong>
+				<p>
+					<span class="loginType">로그인</span>을 원하지 않는 경우 <br>
+					<span class="txt-primary">'돌아가기'</span> 버튼을 눌러주세요.
+				</p>
+			</div>
+		</div>
+		<div class="modal-action">
+			<a href="javascript:;" class="btn white modal-close">돌아가기</a> 
+			<a href="javascript:fncGoLoginForm('P');" class="btn btnLoginType">로그인하러 가기</a>
+			<a href="javascript:fncGoLoginForm('P', '', true);" class="btn add-login btnLoginType">추가 인증하러 가기</a> 
+			<a href="javascript:fncGoLoginForm('P');" class="btn btnLoginType btnLoginType1">개인 로그인</a> 
+			
+			<a href="javascript:fncGoLoginForm('B');" class="btn btnLoginType btnLoginType2">사업장 로그인</a>
+			
+		</div>
+		<div class="modal-action-close">
+			<button type="button" class="modal-close">
+				<span class="loginType">로그인</span>안내 창닫기
+			</button>
+		</div>
+	</div>
+</div>
+
+
+
+<script>
+	certSrvcStr = "{&#034;P&#034;:{&#034;MN25059927&#034;:{&#034;menuId&#034;:&#034;MN25059927&#034;,&#034;menuName&#034;:&#034;조기노령연금 지급정지/재지급 신청&#034;,&#034;menuUrl&#034;:&#034;/elctcvlcpt/dclraply/getOHAC0081M0.do&#034;,&#034;upperId&#034;:&#034;MN24001720&#034;,&#034;topMenuId&#034;:null,&#034;mgrName&#034;:&#034;연금급여실 연금기획부 김연*(063-713-1234)&#034;,&#034;npagYn&#034;:&#034;N&#034;,&#034;menuExpsrYn&#034;:&#034;Y&#034;,&#034;hmpgMenuTypeCd&#034;:&#034;01&#034;,&#034;dgstfnExmnYn&#034;:&#034;N&#034;,&#034;rcmdtnSkilUseYn&#034;:&#034;N&#034;,&#034;picIndctYn&#034;:&#034;N&#034;,&#034;tkcgDeptCn&#034;:null,&#034;picCn&#034;:null,&#034;menuIdPath&#034;:&#034;MN24000865&gt;MN24000877&gt;MN24000938&gt;MN24001720&gt;MN25059927&#034;,&#034;certMeanCdList&#034;:&#034;02,05,04,03&#034;,&#034;loginSrvcType&#034;:&#034;P&#034;,&#034;subList&#034;:null},&#034;MN25059928&#034;:{&#034;menuId&#034;:&#034;MN25059928&#034;,&#034;menuName&#034;:&#034;연금소득자 소득ㆍ세액 공제신고&#034;,&#034;menuUrl&#034;:&#034;/elctcvlcpt/dclraply/getOHAC0076M0.do&#034;,&#034;upperId&#034;:&#034;MN24001720&#034;,&#034;topMenuId&#034;:null,&#034;mgrName&#034;:&#034;연금급여실 연금기획부 김연*(063-713-1234)&#034;,&#034;npagYn&#034;:&#034;N&#034;,&#034;menuExpsrYn&#034;:&#034;Y&#034;,&#034;hmpgMenuTypeCd&#034;:&#034;01&#034;,&#034;dgstfnExmnYn&#034;:&#034;N&#034;,&#034;rcmdtnSkilUseYn&#034;:&#034;Y&#034;,&#034;picIndctYn&#034;:&#034;N&#034;,&#034;tkcgDeptCn&#034;:null,&#034;picCn&#034;:null,&#034;menuIdPath&#034;:&#034;MN24000865&gt;MN24000877&gt;MN24000938&gt;MN24001720&gt;MN25059928&#034;,&#034;certMeanCdList&#034;:&#034;02,05,04,03&#034;,&#034;loginSrvcType&#034;:&#034;P&#034;,&#034;subList&#034;:null},&#034;MN24001052&#034;:{&#034;menuId&#034;:&#034;MN24001052&#034;,&#034;menuName&#034;:&#034;장애정도심사 진행상태 조회&#034;,&#034;menuUrl&#034;:&#034;/elctcvlcpt/inquiry/getOHAC0018M0.do&#034;,&#034;upperId&#034;:&#034;MN24001718&#034;,&#034;topMenuId&#034;:null,&#034;mgrName&#034;:&#034;연금급여실 연금기획부 김연*(063-713-1234)&#034;,&#034;npagYn&#034;:&#034;N&#034;,&#034;menuExpsrYn&#034;:&#034;Y&#034;,&#034;hmpgMenuTypeCd&#034;:&#034;01&#034;,&#034;dgstfnExmnYn&#034;:&#034;N&#034;,&#034;rcmdtnSkilUseYn&#034;:&#034;N&#034;,&#034;picIndctYn&#034;:&#034;Y&#034;,&#034;tkcgDeptCn&#034;:&#034;담당 : 장애인지원실 장애심사지원부&#034;,&#034;picCn&#034;:null,&#034;menuIdPath&#034;:&#034;MN24000865&gt;MN24000877&gt;MN24000936&gt;MN24001718&gt;MN24001052&#034;,&#034;certMeanCdList&#034;:&#034;04,03,02,05&#034;,&#034;loginSrvcType&#034;:&#034;P&#034;,&#034;subList&#034;:null},&#034;MN24001051&#034;:{&#034;menuId&#034;:&#034;MN24001051&#034;,&#034;menuName&#034;:&#034;국민연금대여 상환내역 확인&#034;,&#034;menuUrl&#034;:&#034;/elctcvlcpt/inquiry/getOHAC0017M0.do&#034;,&#034;upperId&#034;:&#034;MN24001717&#034;,&#034;topMenuId&#034;:null,&#034;mgrName&#034;:&#034;연금급여실 연금기획부 김연*(063-713-1234)&#034;,&#034;npagYn&#034;:&#034;N&#034;,&#034;menuExpsrYn&#034;:&#034;Y&#034;,&#034;hmpgMenuTypeCd&#034;:&#034;01&#034;,&#034;dgstfnExmnYn&#034;:&#034;N&#034;,&#034;rcmdtnSkilUseYn&#034;:&#034;Y&#034;,&#034;picIndctYn&#034;:&#034;Y&#034;,&#034;tkcgDeptCn&#034;:&#034;담당 : 복지사업센터 복지사업운영부&#034;,&#034;picCn&#034;:null,&#034;menuIdPath&#034;:&#034;MN24000865&gt;MN24000877&gt;MN24000936&gt;MN24001717&gt;MN24001051&#034;,&#034;certMeanCdList&#034;:&#034;04,03,02,05&#034;,&#034;loginSrvcType&#034;:&#034;P&#034;,&#034;subList&#034;:null},&#034;MN25059922&#034;:{&#034;menuId&#034;:&#034;MN25059922&#034;,&#034;menuName&#034;:&#034;마이데이터 급여청구 서비스 신청&#034;,&#034;menuUrl&#034;:&#034;/elctcvlcpt/dclraply/getOHAC0086M0.do&#034;,&#034;upperId&#034;:&#034;MN24001720&#034;,&#034;topMenuId&#034;:null,&#034;mgrName&#034;:&#034;연금급여실 연금기획부 김연*(063-713-1234)&#034;,&#034;npagYn&#034;:&#034;N&#034;,&#034;menuExpsrYn&#034;:&#034;Y&#034;,&#034;hmpgMenuTypeCd&#034;:&#034;01&#034;,&#034;dgstfnExmnYn&#034;:&#034;N&#034;,&#034;rcmdtnSkilUseYn&#034;:&#034;N&#034;,&#034;picIndctYn&#034;:&#034;N&#034;,&#034;tkcgDeptCn&#034;:null,&#034;picCn&#034;:null,&#034;menuIdPath&#034;:&#034;MN24000865&gt;MN24000877&gt;MN24000938&gt;MN24001720&gt;MN25059922&#034;,&#034;certMeanCdList&#034;:&#034;02,05,04,03&#034;,&#034;loginSrvcType&#034;:&#034;P&#034;,&#034;subList&#034;:null},&#034;MN24001050&#034;:{&#034;menuId&#034;:&#034;MN24001050&#034;,&#034;menuName&#034;:&#034;사망자 및 피후견인 등 재산 통합처리 결과조회&#034;,&#034;menuUrl&#034;:&#034;/elctcvlcpt/inquiry/getOHAC0016M0.do&#034;,&#034;upperId&#034;:&#034;MN24001717&#034;,&#034;topMenuId&#034;:null,&#034;mgrName&#034;:&#034;연금급여실 연금기획부 김연*(063-713-1234)&#034;,&#034;npagYn&#034;:&#034;N&#034;,&#034;menuExpsrYn&#034;:&#034;Y&#034;,&#034;hmpgMenuTypeCd&#034;:&#034;01&#034;,&#034;dgstfnExmnYn&#034;:&#034;N&#034;,&#034;rcmdtnSkilUseYn&#034;:&#034;Y&#034;,&#034;picIndctYn&#034;:&#034;Y&#034;,&#034;tkcgDeptCn&#034;:&#034;담당 : 연금급여실 연금지급부&#034;,&#034;picCn&#034;:null,&#034;menuIdPath&#034;:&#034;MN24000865&gt;MN24000877&gt;MN24000936&gt;MN24001717&gt;MN24001050&#034;,&#034;certMeanCdList&#034;:&#034;04,03,02,05&#034;,&#034;loginSrvcType&#034;:&#034;P&#034;,&#034;subList&#034;:null},&#034;MN25059923&#034;:{&#034;menuId&#034;:&#034;MN25059923&#034;,&#034;menuName&#034;:&#034;마이데이터 수급권 확인(소득) 서비스 신청&#034;,&#034;menuUrl&#034;:&#034;/elctcvlcpt/dclraply/getOHAC0085M0.do&#034;,&#034;upperId&#034;:&#034;MN24001720&#034;,&#034;topMenuId&#034;:null,&#034;mgrName&#034;:&#034;연금급여실 연금기획부 김연*(063-713-1234)&#034;,&#034;npagYn&#034;:&#034;N&#034;,&#034;menuExpsrYn&#034;:&#034;Y&#034;,&#034;hmpgMenuTypeCd&#034;:&#034;01&#034;,&#034;dgstfnExmnYn&#034;:&#034;N&#034;,&#034;rcmdtnSkilUseYn&#034;:&#034;N&#034;,&#034;picIndctYn&#034;:&#034;N&#034;,&#034;tkcgDeptCn&#034;:null,&#034;picCn&#034;:null,&#034;menuIdPath&#034;:&#034;MN24000865&gt;MN24000877&gt;MN24000938&gt;MN24001720&gt;MN25059923&#034;,&#034;certMeanCdList&#034;:&#034;02,05,04,03&#034;,&#034;loginSrvcType&#034;:&#034;P&#034;,&#034;subList&#034;:null},&#034;MN24001045&#034;:{&#034;menuId&#034;:&#034;MN24001045&#034;,&#034;menuName&#034;:&#034;국민연금 찾아가세요&#034;,&#034;menuUrl&#034;:&#034;/elctcvlcpt/inquiry/getOHAC0011M0.do&#034;,&#034;upperId&#034;:&#034;MN24001717&#034;,&#034;topMenuId&#034;:null,&#034;mgrName&#034;:&#034;연금급여실 연금기획부 김연*(063-713-1234)&#034;,&#034;npagYn&#034;:&#034;N&#034;,&#034;menuExpsrYn&#034;:&#034;Y&#034;,&#034;hmpgMenuTypeCd&#034;:&#034;01&#034;,&#034;dgstfnExmnYn&#034;:&#034;N&#034;,&#034;rcmdtnSkilUseYn&#034;:&#034;Y&#034;,&#034;picIndctYn&#034;:&#034;Y&#034;,&#034;tkcgDeptCn&#034;:&#034;담당 : 연금급여실 연금지급부&#034;,&#034;picCn&#034;:null,&#034;menuIdPath&#034;:&#034;MN24000865&gt;MN24000877&gt;MN24000936&gt;MN24001717&gt;MN24001045&#034;,&#034;certMeanCdList&#034;:&#034;04,03,02,05&#034;,&#034;loginSrvcType&#034;:&#034;P&#034;,&#034;subList&#034;:null},&#034;MN24001044&#034;:{&#034;menuId&#034;:&#034;MN24001044&#034;,&#034;menuName&#034;:&#034;급여 청구 및 수급권 변동 처리내역 조회&#034;,&#034;menuUrl&#034;:&#034;/elctcvlcpt/inquiry/getOHAC0010M0.do&#034;,&#034;upperId&#034;:&#034;MN24001717&#034;,&#034;topMenuId&#034;:null,&#034;mgrName&#034;:&#034;연금급여실 연금기획부 김연*(063-713-1234)&#034;,&#034;npagYn&#034;:&#034;N&#034;,&#034;menuExpsrYn&#034;:&#034;Y&#034;,&#034;hmpgMenuTypeCd&#034;:&#034;01&#034;,&#034;dgstfnExmnYn&#034;:&#034;N&#034;,&#034;rcmdtnSkilUseYn&#034;:&#034;N&#034;,&#034;picIndctYn&#034;:&#034;Y&#034;,&#034;tkcgDeptCn&#034;:&#034;담당 : 연금급여실 연금지급부&#034;,&#034;picCn&#034;:null,&#034;menuIdPath&#034;:&#034;MN24000865&gt;MN24000877&gt;MN24000936&gt;MN24001717&gt;MN24001044&#034;,&#034;certMeanCdList&#034;:&#034;04,03,02,05&#034;,&#034;loginSrvcType&#034;:&#034;P&#034;,&#034;subList&#034;:null},&#034;MN24001043&#034;:{&#034;menuId&#034;:&#034;MN24001043&#034;,&#034;menuName&#034;:&#034;보험료 선납내역 조회&#034;,&#034;menuUrl&#034;:&#034;/elctcvlcpt/inquiry/getOHAC0009M0.do&#034;,&#034;upperId&#034;:&#034;MN24001716&#034;,&#034;topMenuId&#034;:null,&#034;mgrName&#034;:&#034;연금급여실 연금기획부 김연*(063-713-1234)&#034;,&#034;npagYn&#034;:&#034;N&#034;,&#034;menuExpsrYn&#034;:&#034;Y&#034;,&#034;hmpgMenuTypeCd&#034;:&#034;01&#034;,&#034;dgstfnExmnYn&#034;:&#034;N&#034;,&#034;rcmdtnSkilUseYn&#034;:&#034;Y&#034;,&#034;picIndctYn&#034;:&#034;Y&#034;,&#034;tkcgDeptCn&#034;:&#034;담당 : 연금급여실 연금조사부&#034;,&#034;picCn&#034;:null,&#034;menuIdPath&#034;:&#034;MN24000865&gt;MN24000877&gt;MN24000936&gt;MN24001716&gt;MN24001043&#034;,&#034;certMeanCdList&#034;:&#034;04,03,02,05&#034;,&#034;loginSrvcType&#034;:&#034;P&#034;,&#034;subList&#034;:null},&#034;MN24001042&#034;:{&#034;menuId&#034;:&#034;MN24001042&#034;,&#034;menuName&#034;:&#034;환수금 납부내역 조회&#034;,&#034;menuUrl&#034;:&#034;/elctcvlcpt/inquiry/getOHAC0008M0.do&#034;,&#034;upperId&#034;:&#034;MN24001716&#034;,&#034;topMenuId&#034;:null,&#034;mgrName&#034;:&#034;연금급여실 연금기획부 김연*(063-713-1234)&#034;,&#034;npagYn&#034;:&#034;N&#034;,&#034;menuExpsrYn&#034;:&#034;Y&#034;,&#034;hmpgMenuTypeCd&#034;:&#034;01&#034;,&#034;dgstfnExmnYn&#034;:&#034;N&#034;,&#034;rcmdtnSkilUseYn&#034;:&#034;N&#034;,&#034;picIndctYn&#034;:&#034;Y&#034;,&#034;tkcgDeptCn&#034;:&#034;담당 : 연금급여실 연금조사부&#034;,&#034;picCn&#034;:null,&#034;menuIdPath&#034;:&#034;MN24000865&gt;MN24000877&gt;MN24000936&gt;MN24001716&gt;MN24001042&#034;,&#034;certMeanCdList&#034;:&#034;04,03,02,05&#034;,&#034;loginSrvcType&#034;:&#034;P&#034;,&#034;subList&#034;:null},&#034;MN24001049&#034;:{&#034;menuId&#034;:&#034;MN24001049&#034;,&#034;menuName&#034;:&#034;노령연금 연말정산 모의계산&#034;,&#034;menuUrl&#034;:&#034;/elctcvlcpt/inquiry/getOHAC0015M0.do&#034;,&#034;upperId&#034;:&#034;MN24001717&#034;,&#034;topMenuId&#034;:null,&#034;mgrName&#034;:&#034;연금급여실 연금기획부 김연*(063-713-1234)&#034;,&#034;npagYn&#034;:&#034;N&#034;,&#034;menuExpsrYn&#034;:&#034;Y&#034;,&#034;hmpgMenuTypeCd&#034;:&#034;01&#034;,&#034;dgstfnExmnYn&#034;:&#034;N&#034;,&#034;rcmdtnSkilUseYn&#034;:&#034;Y&#034;,&#034;picIndctYn&#034;:&#034;Y&#034;,&#034;tkcgDeptCn&#034;:&#034;담당 : 연금급여실 연금조사부&#034;,&#034;picCn&#034;:null,&#034;menuIdPath&#034;:&#034;MN24000865&gt;MN24000877&gt;MN24000936&gt;MN24001717&gt;MN24001049&#034;,&#034;certMeanCdList&#034;:&#034;04,03,02,05&#034;,&#034;loginSrvcType&#034;:&#034;P&#034;,&#034;subList&#034;:null},&#034;MN24001048&#034;:{&#034;menuId&#034;:&#034;MN24001048&#034;,&#034;menuName&#034;:&#034;장애 · 유족연금 장애심사 진행상태 조회&#034;,&#034;menuUrl&#034;:&#034;/elctcvlcpt/inquiry/getOHAC0014M0.do&#034;,&#034;upperId&#034;:&#034;MN24001717&#034;,&#034;topMenuId&#034;:null,&#034;mgrName&#034;:&#034;연금급여실 연금기획부 김연*(063-713-1234)&#034;,&#034;npagYn&#034;:&#034;N&#034;,&#034;menuExpsrYn&#034;:&#034;Y&#034;,&#034;hmpgMenuTypeCd&#034;:&#034;01&#034;,&#034;dgstfnExmnYn&#034;:&#034;N&#034;,&#034;rcmdtnSkilUseYn&#034;:&#034;Y&#034;,&#034;picIndctYn&#034;:&#034;Y&#034;,&#034;tkcgDeptCn&#034;:&#034;담당 : 장애인지원실 장애심사지원부&#034;,&#034;picCn&#034;:null,&#034;menuIdPath&#034;:&#034;MN24000865&gt;MN24000877&gt;MN24000936&gt;MN24001717&gt;MN24001048&#034;,&#034;certMeanCdList&#034;:&#034;04,03,02,05&#034;,&#034;loginSrvcType&#034;:&#034;P&#034;,&#034;subList&#034;:null},&#034;MN24001047&#034;:{&#034;menuId&#034;:&#034;MN24001047&#034;,&#034;menuName&#034;:&#034;수급권 내용변경 통지내용 조회&#034;,&#034;menuUrl&#034;:&#034;/elctcvlcpt/inquiry/getOHAC0013M0.do&#034;,&#034;upperId&#034;:&#034;MN24001717&#034;,&#034;topMenuId&#034;:null,&#034;mgrName&#034;:&#034;연금급여실 연금기획부 김연*(063-713-1234)&#034;,&#034;npagYn&#034;:&#034;N&#034;,&#034;menuExpsrYn&#034;:&#034;Y&#034;,&#034;hmpgMenuTypeCd&#034;:&#034;01&#034;,&#034;dgstfnExmnYn&#034;:&#034;N&#034;,&#034;rcmdtnSkilUseYn&#034;:&#034;Y&#034;,&#034;picIndctYn&#034;:&#034;N&#034;,&#034;tkcgDeptCn&#034;:&#034;국민연금 홈페이지 관리팀&#034;,&#034;picCn&#034;:&#034;김연금 (02-430-1286)&#034;,&#034;menuIdPath&#034;:&#034;MN24000865&gt;MN24000877&gt;MN24000936&gt;MN24001717&gt;MN24001047&#034;,&#034;certMeanCdList&#034;:&#034;04,03,02,05&#034;,&#034;loginSrvcType&#034;:&#034;P&#034;,&#034;subList&#034;:null},&#034;MN26000015&#034;:{&#034;menuId&#034;:&#034;MN26000015&#034;,&#034;menuName&#034;:&#034;청년 생애 첫 연금보험료 지원(대리 신청)&#034;,&#034;menuUrl&#034;:null,&#034;upperId&#034;:&#034;MN24001719&#034;,&#034;topMenuId&#034;:null,&#034;mgrName&#034;:&#034;연금급여실 연금기획부 김연*(063-713-1234)&#034;,&#034;npagYn&#034;:&#034;N&#034;,&#034;menuExpsrYn&#034;:&#034;N&#034;,&#034;hmpgMenuTypeCd&#034;:&#034;01&#034;,&#034;dgstfnExmnYn&#034;:&#034;N&#034;,&#034;rcmdtnSkilUseYn&#034;:&#034;Y&#034;,&#034;picIndctYn&#034;:&#034;N&#034;,&#034;tkcgDeptCn&#034;:null,&#034;picCn&#034;:null,&#034;menuIdPath&#034;:&#034;MN24000865&gt;MN24000877&gt;MN24000938&gt;MN24001719&gt;MN26000015&#034;,&#034;certMeanCdList&#034;:&#034;02,05,04,03&#034;,&#034;loginSrvcType&#034;:&#034;P&#034;,&#034;subList&#034;:null},&#034;MN24001046&#034;:{&#034;menuId&#034;:&#034;MN24001046&#034;,&#034;menuName&#034;:&#034;연기연금 신청자 예상연금월액 조회&#034;,&#034;menuUrl&#034;:&#034;/elctcvlcpt/inquiry/getOHAC0012M0.do&#034;,&#034;upperId&#034;:&#034;MN24001717&#034;,&#034;topMenuId&#034;:null,&#034;mgrName&#034;:&#034;연금급여실 연금기획부 김연*(063-713-1234)&#034;,&#034;npagYn&#034;:&#034;N&#034;,&#034;menuExpsrYn&#034;:&#034;Y&#034;,&#034;hmpgMenuTypeCd&#034;:&#034;01&#034;,&#034;dgstfnExmnYn&#034;:&#034;N&#034;,&#034;rcmdtnSkilUseYn&#034;:&#034;Y&#034;,&#034;picIndctYn&#034;:&#034;Y&#034;,&#034;tkcgDeptCn&#034;:&#034;담당 : 연급급여실 연금사후관리부&#034;,&#034;picCn&#034;:null,&#034;menuIdPath&#034;:&#034;MN24000865&gt;MN24000877&gt;MN24000936&gt;MN24001717&gt;MN24001046&#034;,&#034;certMeanCdList&#034;:&#034;04,03,02,05&#034;,&#034;loginSrvcType&#034;:&#034;P&#034;,&#034;subList&#034;:null},&#034;MN26000014&#034;:{&#034;menuId&#034;:&#034;MN26000014&#034;,&#034;menuName&#034;:&#034;청년 생애 첫 연금보험료 지원(본인 신청)&#034;,&#034;menuUrl&#034;:&#034;/elctcvlcpt/dclraply/getOHAC0090M0.do?menuId=MN26000014&#034;,&#034;upperId&#034;:&#034;MN24001719&#034;,&#034;topMenuId&#034;:null,&#034;mgrName&#034;:&#034;연금급여실 연금기획부 김연*(063-713-1234)&#034;,&#034;npagYn&#034;:&#034;N&#034;,&#034;menuExpsrYn&#034;:&#034;N&#034;,&#034;hmpgMenuTypeCd&#034;:&#034;01&#034;,&#034;dgstfnExmnYn&#034;:&#034;N&#034;,&#034;rcmdtnSkilUseYn&#034;:&#034;N&#034;,&#034;picIndctYn&#034;:&#034;N&#034;,&#034;tkcgDeptCn&#034;:null,&#034;picCn&#034;:null,&#034;menuIdPath&#034;:&#034;MN24000865&gt;MN24000877&gt;MN24000938&gt;MN24001719&gt;MN26000014&#034;,&#034;certMeanCdList&#034;:&#034;02,05,04,03&#034;,&#034;loginSrvcType&#034;:&#034;P&#034;,&#034;subList&#034;:null},&#034;MN24001724&#034;:{&#034;menuId&#034;:&#034;MN24001724&#034;,&#034;menuName&#034;:&#034;인터넷 납부서비스 반납금/추납보험료&#034;,&#034;menuUrl&#034;:&#034;https://anypay.nps.or.kr/homepage/nxForm/index_multi_sso.jsp?ssoMenuId=IRSPAYU010_02&#034;,&#034;upperId&#034;:&#034;MN24001723&#034;,&#034;topMenuId&#034;:null,&#034;mgrName&#034;:&#034;연금급여실 연금기획부 김연*(063-713-1234)&#034;,&#034;npagYn&#034;:&#034;Y&#034;,&#034;menuExpsrYn&#034;:&#034;Y&#034;,&#034;hmpgMenuTypeCd&#034;:&#034;01&#034;,&#034;dgstfnExmnYn&#034;:&#034;N&#034;,&#034;rcmdtnSkilUseYn&#034;:&#034;Y&#034;,&#034;picIndctYn&#034;:&#034;N&#034;,&#034;tkcgDeptCn&#034;:null,&#034;picCn&#034;:null,&#034;menuIdPath&#034;:&#034;MN24000865&gt;MN24000877&gt;MN24001723&gt;MN24001724&#034;,&#034;certMeanCdList&#034;:&#034;04,03,02,05&#034;,&#034;loginSrvcType&#034;:&#034;P&#034;,&#034;subList&#034;:null},&#034;MN26000011&#034;:{&#034;menuId&#034;:&#034;MN26000011&#034;,&#034;menuName&#034;:&#034;마이데이터 해외수급자 수급권확인 서비스 신청&#034;,&#034;menuUrl&#034;:null,&#034;upperId&#034;:&#034;MN24001720&#034;,&#034;topMenuId&#034;:null,&#034;mgrName&#034;:&#034;연금급여실 연금기획부 김연*(063-713-1234)&#034;,&#034;npagYn&#034;:&#034;N&#034;,&#034;menuExpsrYn&#034;:&#034;N&#034;,&#034;hmpgMenuTypeCd&#034;:&#034;01&#034;,&#034;dgstfnExmnYn&#034;:&#034;N&#034;,&#034;rcmdtnSkilUseYn&#034;:&#034;N&#034;,&#034;picIndctYn&#034;:&#034;N&#034;,&#034;tkcgDeptCn&#034;:null,&#034;picCn&#034;:null,&#034;menuIdPath&#034;:&#034;MN24000865&gt;MN24000877&gt;MN24000938&gt;MN24001720&gt;MN26000011&#034;,&#034;certMeanCdList&#034;:&#034;02,05,04,03&#034;,&#034;loginSrvcType&#034;:&#034;P&#034;,&#034;subList&#034;:null},&#034;MN24001726&#034;:{&#034;menuId&#034;:&#034;MN24001726&#034;,&#034;menuName&#034;:</body></html>

@@ -4,14 +4,16 @@ server.py — 노무 특화 MCP 서버 (labor-mcp)
 
 목표 기능 5가지 (개발계획.md):
   1. 근로계약서 검토·작성   2. 취업규칙 검토·작성
-  3. 노동법 문제 해결방안 도출 (법령·판례·행정해석·판정례 근거)
+  3. 노동법·4대보험 문제 해결방안 도출 (법령·판례·행정해석·판정례·재결례 근거)
   4. 임금대장 분석 (최저임금·통상/평균임금·주52시간·가산수당·기재사항)
   5. 급여테이블 설계 (조건 입력 → 법 준수 급여 구조 역산)
 
-구성: 검색 도구 9(실시간 8 + 로컬 아카이브 1) + 계산 도구 8 + 분석·설계 도구 2
-      + 리소스 열람 도구 1 + 검증·상태 2 = 22개
-      + 정적 리소스 11종(labor:// URI) + 검토 프롬프트 2종
+구성: 검색 도구 10(실시간 9 + 로컬 아카이브 1) + 계산 도구 10 + 분석·설계 도구 2
+      + 리소스 열람 도구 1 + 검증·상태 2 = 25개
+      + 정적 리소스 13종(labor:// URI) + 검토 프롬프트 2종
 사례 아카이브: archive.py(SQLite+FTS5) — ingest_archive.py로 적재, 매월 1일 자동 갱신
+범위: v1.3부터 노동법에 더해 4대보험(건강보험·장기요양·국민연금·고용보험)과 그 감면·지원.
+      4대보험 요율·계산은 social_insurance.py (요율표 갱신은 그 파일 하나로 끝난다)
 
 역할 분담 원칙: 근로계약서·취업규칙 같은 '문서'는 Claude가 직접 읽고 판단하며
 이 서버는 체크리스트·근거·계산만 공급한다. 반대로 임금대장 같은 '표 데이터'는
@@ -47,11 +49,14 @@ from nlrc import NlrcClient, NlrcParseError, NlrcUpstreamError
 from law_committee import CommitteeClient
 from comwel import ComwelAuthError, ComwelClient, ComwelParseError, ComwelUpstreamError
 from moel_fastcounsel import FastCounselClient, FastCounselParseError, FastCounselUpstreamError
+from hidrc import HidrcClient, HidrcParseError, HidrcUpstreamError, split_sections
+from nps_review import NpsReviewClient, NpsReviewParseError, NpsReviewUpstreamError
 import archive
 import vintage
 import calculators as calc
 import payroll as pr
 import labor_constants as LC
+import social_insurance as si
 
 logging.basicConfig(level=os.environ.get("LOG_LEVEL", "INFO"))
 
@@ -62,15 +67,21 @@ RESOURCE_DIR = BASE_DIR / "resources"
 mcp = FastMCP(
     "labor-mcp",
     instructions=(
-        "대한민국 노무(노동법) 특화 도구입니다. "
-        "법령 조문·부칙·연혁은 labor_law_article, 고용노동부 행정해석(질의회시)과 법제처 "
-        "법령해석례는 moel_interpretation_search, 법원 노동판례는 labor_case_search, "
+        "대한민국 노무(노동법)와 4대보험(건강보험·장기요양·국민연금·고용보험) 특화 도구입니다. "
+        "법령 조문·부칙·연혁은 labor_law_article — 근로기준법 등 노동법뿐 아니라 "
+        "국민건강보험법·노인장기요양보험법·국민연금법·고용산재보험료징수법과 그 시행령·"
+        "시행규칙 조문도 같은 도구로 봅니다. "
+        "고용노동부 행정해석(질의회시)과 법제처 법령해석례는 moel_interpretation_search, "
+        "법원 판례는 labor_case_search, "
         "노동위원회 판정례는 nlrc_decision_search(화면) 또는 committee_decision_search("
         "source='노동위원회', 공식 API)를 사용하세요. 고용보험심사위원회·산재재심사위원회 "
         "결정문과 행정심판례도 committee_decision_search, 훈령·예규·고시는 "
-        "labor_admin_rule_search, 근로복지공단 산재 판결문은 comwel_precedent_search, "
-        "고용노동부 빠른인터넷상담은 moel_counsel_search입니다. "
-        "사례를 넓게 찾을 때는 먼저 labor_archive_search(로컬 아카이브 — 위 자료원 9곳을 "
+        "labor_admin_rule_search(고용노동부·보건복지부), 근로복지공단 산재 판결문은 "
+        "comwel_precedent_search, 고용노동부 빠른인터넷상담은 moel_counsel_search입니다. "
+        "건강보험·국민연금 분쟁은 **특별행정심판**이라 일반 행정심판례에 안 나옵니다 — "
+        "건강보험분쟁조정위원회 재결례와 국민연금 (재)심사청구 결정사례는 "
+        "social_insurance_decision_search를 쓰세요. "
+        "사례를 넓게 찾을 때는 먼저 labor_archive_search(로컬 아카이브 — 위 자료원 14곳을 "
         "전문검색, 원천 장애와 무관, 2글자 검색어 가능)로 후보를 모으고, 최신 자료는 "
         "실시간 도구로 교차 확인하세요.\n\n"
         "**사례를 인용할 때는 반드시 그 자료의 일자를 함께 밝히세요.** 노동법은 판례·행정해석이 "
@@ -82,6 +93,12 @@ mcp = FastMCP(
         "수치 검증(최저임금·통상/평균임금·연차·주휴·가산수당·퇴직급여·해고예고)은 계산 도구를, "
         "임금대장 전체 점검은 analyze_payroll(labor_resource('schema/임금대장-입력')의 스키마로 "
         "변환 후 호출), 급여 구조 설계는 design_pay_table을 사용하세요. "
+        "4대보험료는 calc_social_insurance, 두루누리 사회보험료 지원 판정은 "
+        "check_premium_support입니다 — 요율을 직접 외워 쓰지 말고 반드시 이 도구를 부르세요. "
+        "**국민연금 보험료율은 2026년부터 부칙 특례로 매년 오릅니다**(2026년 노사 각 4.75%, "
+        "2033년 각 6.5%). 연도별 요율·상한·감면 기준의 근거 조문은 "
+        "labor_resource('table/4대보험-요율')과 labor_resource('table/4대보험-감면지원')에 "
+        "있습니다. 건강보험료·장기요양보험료는 두루누리 지원 대상이 아닙니다. "
         "근로계약서·취업규칙 검토 시에는 먼저 labor_resource('checklist/근로계약서' 또는 "
         "'checklist/취업규칙')를 로드해 체크리스트 순서대로 검토하세요 "
         "(표준취업규칙은 약 6만 자이므로 chapter 인자로 장 단위로 나눠 읽을 것). "
@@ -116,6 +133,8 @@ _nlrc = NlrcClient()
 _committee = CommitteeClient()
 _comwel = ComwelClient()
 _counsel = FastCounselClient()
+_hidrc = HidrcClient()
+_npsrv = NpsReviewClient()
 
 
 _DISCLAIMER = ("이 계산은 참고용입니다 — 최종 판단은 공인노무사 확인이 필요합니다.")
@@ -137,14 +156,16 @@ _GUIDANCE = {
 def _status_for(exc: BaseException) -> str:
     if isinstance(exc, (LawAuthError, ComwelAuthError)):
         return "AUTH_ERROR"
-    if isinstance(exc, (NlrcParseError, ComwelParseError, FastCounselParseError)):
+    if isinstance(exc, (NlrcParseError, ComwelParseError, FastCounselParseError,
+                        HidrcParseError, NpsReviewParseError)):
         return "PARSE_ERROR"
     if isinstance(exc, LawNotFound):
         return "NOT_FOUND"
     if isinstance(exc, (LawInvalidInput, ValueError, KeyError, TypeError, AttributeError)):
         return "INVALID_INPUT"
     if isinstance(exc, (LawUpstreamError, NlrcUpstreamError, LawGoKrError,
-                        ComwelUpstreamError, FastCounselUpstreamError)):
+                        ComwelUpstreamError, FastCounselUpstreamError,
+                        HidrcUpstreamError, NpsReviewUpstreamError)):
         return "UPSTREAM_ERROR"
     return "UPSTREAM_ERROR"
 
@@ -344,10 +365,13 @@ def labor_case_search(
     page: int = 1,
     max_chars: int = 8000,
 ) -> dict:
-    """법원 노동판례 검색·본문 조회 (법제처 판례DB — 대법원·하급심).
+    """법원 판례 검색·본문 조회 (법제처 판례DB — 대법원·하급심).
 
     본문 전문검색이라 무관한 판례가 섞일 수 있으니 사건명·사건종류로 걸러 볼 것.
-    통상임금·부당해고·취업규칙 불이익변경 등 노동 쟁점 판례가 최신 선고분까지 수록.
+    통상임금·부당해고·취업규칙 불이익변경 같은 노동 쟁점과 함께, 건강보험료 부과처분 취소·
+    국민연금 가입자격·장기요양기관 처분 등 4대보험 행정소송 판례도 최신 선고분까지 수록.
+    같은 판례를 아카이브에도 담아 두었으므로(sources="법원판례") 넓게 훑을 때는
+    labor_archive_search가 빠르고, 이 도구는 아카이브 갱신 이후의 최신 선고분 확인용.
 
     Args:
         keyword: 검색어 (case_serial 미지정 시 필수)
@@ -546,6 +570,71 @@ def moel_counsel_search(
     return res
 
 
+@mcp.tool(annotations=ToolAnnotations(readOnlyHint=True, openWorldHint=True))
+@_guard(dated=True)
+def social_insurance_decision_search(
+    body: str = "건강보험",
+    keyword: str = "",
+    doc_id: str = "",
+    page: int = 1,
+    max_chars: int = 8000,
+) -> dict:
+    """건강보험·국민연금 **특별행정심판** 판단례 실시간 조회.
+
+    4대보험 분쟁은 일반 행정심판(중앙행정심판위원회)이 아니라 각 제도의 특별행정심판으로
+    간다 — 건강보험은 이의신청→심판청구(건강보험분쟁조정위원회), 국민연금은 이의신청→
+    심사청구(국민연금심사위원회)→재심사청구(국민연금재심사위원회). 그래서 이 사건들은
+    committee_decision_search(source='행정심판')로는 거의 안 나온다.
+
+    - body="건강보험": 건강보험분쟁조정위원회 재결례 (simpan.go.kr, 2026-09 기준 68건).
+      정산보험료 부과·피부양자 자격·보험료 경감·요양급여비용 조정 쟁점. 본문은 재결문 전문.
+    - body="국민연금": 국민연금 (재)심사청구 결정사례 (nps.or.kr, 173건, 2018~2021년 결정).
+      사업장가입자 자격·기준소득월액·납부예외·장애연금 쟁점. 결정일자가 **연도뿐**이다.
+
+    건수가 적으니 넓게 찾을 때는 labor_archive_search(sources="건강보험" 또는 "국민연금")를
+    먼저 쓰세요 — 2글자 검색과 본문 전문검색이 됩니다. 이 도구는 원천 최신 확인용.
+    장기요양재심사위원회는 재결례를 공개하지 않아 조회할 수 없습니다 (부존재가 아니라 미공개).
+
+    Args:
+        body: "건강보험" | "국민연금"
+        keyword: 게시판 자체 검색어 (비우면 최신순 목록)
+        doc_id: 건강보험은 목록의 '첨부일련번호', 국민연금은 'pstSn' — 주면 본문 전문
+        page: 목록 페이지 (건강보험 10건/쪽, 국민연금 10건/쪽)
+    """
+    kind = (body or "").strip()
+    if kind in ("건강보험", "건보", "건강보험분쟁조정위원회", "hidrc"):
+        if doc_id:
+            text = _hidrc.get_text(doc_id)
+            sec = split_sections(text)
+            return {"자료원": "건강보험분쟁조정위원회 재결례", "첨부일련번호": doc_id,
+                    "구역": {k: v[:max_chars] for k, v in sec.items()},
+                    "잘림": [k for k, v in sec.items() if len(v) > max_chars] or None}
+        res = _hidrc.list(page=page, keyword=keyword)
+        res["자료원"] = "건강보험분쟁조정위원회 재결례 (simpan.go.kr)"
+        res["안내"] = "본문은 doc_id=<첨부일련번호>로 재조회 (재결문 PDF 전문을 텍스트로 변환)."
+        return res
+    if kind in ("국민연금", "연금", "국민연금재심사위원회", "npsrv"):
+        if doc_id:
+            v = _npsrv.get(doc_id)
+            return {"자료원": "국민연금 (재)심사청구 결정사례", "pstSn": v["pstSn"],
+                    "제목": v["제목"], "결정": v["결정"],
+                    "본문": {k: x[:max_chars] for k, x in v["본문"].items()}}
+        res = _npsrv.list(page=page, keyword=keyword)
+        # 원천이 '결정년도'만 주므로 아카이브와 같은 표기로 맞춘다 — 그냥 두면 시점 대조가
+        # "2020년"을 2020-01-01로 읽어 **확정 일자처럼** 보이게 한다
+        for it in res.get("items", []):
+            y = re.sub(r"\D", "", it.get("결정년도", ""))[:4]
+            if y:
+                it["일자"] = f"{y}년경 (결정연도 — 결정일 아님)"
+                it["일자근거"] = "결정연도"
+        res["자료원"] = "국민연금 (재)심사청구 결정사례 (nps.or.kr)"
+        res["안내"] = ("본문은 doc_id=<pstSn>으로 재조회. **결정일자는 연도만 공개**되므로 "
+                      "인용할 때 '○○○○년 결정'으로 적고 월·일을 지어내지 말 것 — "
+                      "응답의 '시점범위'에 보이는 월·일(01-01)은 비교용으로 채운 값입니다.")
+        return res
+    raise ValueError(f"body는 '건강보험' 또는 '국민연금'이어야 합니다: {body!r}")
+
+
 def _archive_missing() -> dict:
     return {"status": "UPSTREAM_ERROR",
             "오류": f"사례 아카이브 DB가 없습니다: {archive.db_path()}",
@@ -567,18 +656,22 @@ def labor_archive_search(
     source: str = "",
     max_chars: int = 8000,
 ) -> dict:
-    """로컬 사례 아카이브 전문검색 — 원천 9곳을 한 번에, 원천 사이트가 죽어도 동작.
+    """로컬 사례 아카이브 전문검색 — 원천 14곳을 한 번에, 원천 사이트가 죽어도 동작.
 
     적재 자료원(sources 값): 노동위원회(nlrc) · 행정해석(moel) · 고용보험심사위원회(eiac) ·
-    산재재심사위원회(iaciac) · 행정심판(decc) · 행정규칙(admrul) · 빠른인터넷상담(counsel) ·
-    질의회시집(qnabook) · 산재판례(comwel). 매월 1일 증분 갱신되므로 **갱신 직전 며칠치는 실시간
-    도구로 교차 확인**할 것. 2글자 검색어("해고")가 되고 어절은 AND. 결과에는 발췌만 오므로
-    본문은 source+doc_id로 다시 호출한다.
+    산재재심사위원회(iaciac) · 행정심판(decc) · 행정규칙(admrul, 고용노동부·보건복지부) ·
+    빠른인터넷상담(counsel) · 질의회시집(qnabook) · 산재판례(comwel) · 법원판례(prec) ·
+    법령해석례(expc, 법제처) · 헌재결정례(detc) · 건강보험분쟁조정위원회(hidrc) ·
+    국민연금 (재)심사청구 결정사례(npsrv).
+    4대보험 질문이면 sources="건강보험,국민연금,행정심판,법원판례"처럼 좁혀 부르면 정확도가 오른다.
+    매월 1일 증분 갱신되므로 **갱신 직전 며칠치는 실시간 도구로 교차 확인**할 것.
+    2글자 검색어("해고")가 되고 어절은 AND. 결과에는 발췌만 오므로 본문은 source+doc_id로 다시 호출한다.
 
     **시점 대조**: 아카이브는 1965년 행정해석까지 담고 있어 결론이 이미 뒤집힌 자료가 섞인다.
     각 항목의 '일자'와 응답의 '시점주의'(전환일보다 앞선 자료가 있다는 경고)를 반드시 확인하고,
     인용할 때 일자를 함께 밝힐 것. 최근 자료만 보려면 date_from을 주거나 latest_first=True.
-    산재판례의 일자는 사건번호 접수연도에서 유추한 값("2019년경")이라 선고일이 아니다.
+    산재판례의 일자는 사건번호 접수연도에서 유추한 값("2019년경")이라 선고일이 아니고,
+    국민연금 결정사례의 일자는 공개된 '결정연도'뿐이라 월·일이 없다 — 둘 다 '일자근거'가 붙는다.
 
     Args:
         keyword: 검색어. 비우면 적재 현황(자료원별 건수·최근 적재일)을 반환.
@@ -857,6 +950,79 @@ def calc_wage_cut_limit(avg_daily_wage: float, wage_period_total: float) -> dict
     return calc.calc_wage_cut_limit(avg_daily_wage, wage_period_total)
 
 
+@mcp.tool(annotations=ToolAnnotations(readOnlyHint=True, openWorldHint=False, idempotentHint=True))
+@_guard(calc_tool=True)
+def calc_social_insurance(
+    monthly_wage: float,
+    as_of: str = "",
+    scale: str = "150명 미만",
+    industrial_accident_rate: float = 0.0,
+    apply_caps: bool = True,
+    pension_income: float = 0.0,
+) -> dict:
+    """직장가입자 1명의 월 4대보험료 계산 (건강보험·장기요양·국민연금·고용보험, 근로자/사업주별).
+
+    요율·상한은 전부 법령·고시 원문에서 확인한 표를 쓰며, 표에 없는 연도는 조용히 최신값을
+    쓰지 않고 오류를 냅니다. 특히 **국민연금 요율은 2026년부터 매년 오릅니다** — 부칙 특례로
+    2026년 각 4.75%(합계 9.5%), 2032년 각 6.25%, 2033년부터 본칙 6.5%(합계 13%).
+    장기요양보험료는 보수월액이 아니라 **건강보험료**에 비율을 곱해 구합니다.
+
+    산재보험료는 업종별 고시 요율이 있어야 계산되므로 기본값 0에서는 빼고 계산합니다.
+    요율은 labor_admin_rule_search("사업종류별 산재보험료율")로 찾아 넣으세요.
+
+    Args:
+        monthly_wage: 보수월액 — **비과세를 뺀 과세 보수** 월액
+        as_of: 기준일 YYYY-MM-DD (기본 오늘). 요율이 연중에도 바뀌므로 일자로 받습니다
+        scale: 고용안정·직업능력개발사업 요율 구분 — "150명 미만"(0.25%) ·
+            "150명 이상 우선지원대상기업"(0.45%) · "150명 이상 1천명 미만"(0.65%) ·
+            "1천명 이상·국가·지방자치단체"(0.85%). 사업주 전액 부담
+        industrial_accident_rate: 산재보험료율 (예: 0.0085). 0이면 산재 제외
+        apply_caps: 건강보험료 상·하한과 연금 기준소득월액 상·하한 적용 여부
+        pension_income: 연금 기준소득월액을 보수월액과 달리 잡을 때만
+    """
+    return si.calc_social_insurance(
+        monthly_wage, as_of, scale=scale,
+        industrial_accident_rate=industrial_accident_rate,
+        apply_caps=apply_caps, pension_income=pension_income)
+
+
+@mcp.tool(annotations=ToolAnnotations(readOnlyHint=True, openWorldHint=False, idempotentHint=True))
+@_guard(calc_tool=True)
+def check_premium_support(
+    monthly_wage: float,
+    employee_count: int,
+    as_of: str = "",
+    newly_insured: bool = True,
+    property_tax_base: float = 0.0,
+    global_income: float = 0.0,
+    supported_months: int = 0,
+    is_owner_or_ceo: bool = False,
+) -> dict:
+    """두루누리 사회보험료 지원(고용보험료·연금보험료) 해당 여부와 월 지원액 판정.
+
+    **건강보험료·장기요양보험료는 지원 대상이 아닙니다** — 근거 법률이 없습니다.
+    요건은 근로자 10명 미만 · 월 보수 270만원 미만 · 재산 과세표준 6억원 미만 ·
+    종합소득 4,300만원 미만 · 신규가입(직전 1년 가입 이력 없음)이고, 지원율은 근로자분·
+    사업주분 각각 80%, 누적 36개월 한도입니다.
+
+    재산·종합소득을 넣지 않으면 그 요건은 '미확인'으로 두고 **대상이라고 단정하지 않습니다**.
+
+    Args:
+        monthly_wage: 월 보수액
+        employee_count: 근로자인 피보험자 수 (월평균)
+        as_of: 기준일 YYYY-MM-DD (기본 오늘)
+        newly_insured: 지원신청일 직전 1년간 가입 이력이 없는지
+        property_tax_base: 재산 과세표준 합계 (모르면 0 — 미확인 처리)
+        global_income: 전년도 종합소득 (모르면 0 — 미확인 처리)
+        supported_months: 2018-01-01 이후 이미 지원받은 개월 수
+        is_owner_or_ceo: 개인사업장 사용자·법인 대표이사 여부 (연금 지원에서 제외됨)
+    """
+    return si.check_premium_support(
+        monthly_wage, employee_count, as_of=as_of, newly_insured=newly_insured,
+        property_tax_base=property_tax_base, global_income=global_income,
+        supported_months=supported_months, is_owner_or_ceo=is_owner_or_ceo)
+
+
 # ---------------------------------------------------------------------------
 # 분석·설계 도구 2종
 # ---------------------------------------------------------------------------
@@ -919,6 +1085,10 @@ _RESOURCES = {
     "table/5인미만-적용제외": ("5인미만_적용제외.md", "4인 이하 사업장 근로기준법 적용/미적용 매트릭스"),
     "table/시행중-개정법-기준선": ("시행중_개정법_기준선.md", "2026-08 기준 시행 중 개정법·판례 기준선 + 추진 중 입법"),
     "table/최저임금-연도별": ("최저임금_연도별.md", "연도별 최저임금·산입범위 스케줄·수습 감액 요건"),
+    "table/4대보험-요율": ("4대보험_요율_연도별.md",
+                       "연도별 건강보험·장기요양·국민연금·고용보험 요율과 상·하한 (법령·고시 근거)"),
+    "table/4대보험-감면지원": ("4대보험_감면지원.md",
+                         "두루누리 지원·건강보험료 경감/면제·장기요양 감면·연금 납부예외 요건"),
     "schema/임금대장-입력": ("임금대장_입력스키마.md", "analyze_payroll 입력 스키마 + 엑셀 변환 가이드"),
     "template/표준취업규칙-2026": ("표준취업규칙_2026.md", "고용노동부 2026 표준취업규칙 (일반, 17장 98개조, 필수/선택 표기)"),
     "template/표준취업규칙-단시간-2026": ("표준취업규칙_단시간_2026.md", "고용노동부 2026 표준취업규칙 (단시간근로자용, 96개조)"),
@@ -959,6 +1129,8 @@ _RESOURCE_SLUGS = {
     "table/5인미만-적용제외": "table/under5-exemptions",
     "table/시행중-개정법-기준선": "table/law-baseline",
     "table/최저임금-연도별": "table/minimum-wage-by-year",
+    "table/4대보험-요율": "table/social-insurance-rates",
+    "table/4대보험-감면지원": "table/social-insurance-support",
     "schema/임금대장-입력": "schema/payroll-input",
     "template/표준취업규칙-2026": "template/work-rules-2026",
     "template/표준취업규칙-단시간-2026": "template/work-rules-parttime-2026",
@@ -1194,11 +1366,13 @@ def verify_citations(citations: list) -> dict:
 @mcp.tool(annotations=ToolAnnotations(readOnlyHint=True, openWorldHint=True))
 @_guard()
 def check_sources_health() -> dict:
-    """자료원 9곳(law.go.kr 6종 · 노동위원회 화면 · 빠른인터넷상담 · 산재판례 API)과
-    로컬 아카이브의 응답 상태 점검.
+    """자료원 12곳(law.go.kr 7종 · 노동위원회 화면 · 빠른인터넷상담 · 산재판례 API ·
+    건강보험분쟁조정위 · 국민연금 결정사례)과 로컬 아카이브의 응답 상태 점검.
 
     검색 결과가 이상할 때 "내 서버 문제인지, 원천 사이트 문제인지"를 먼저 가른다.
     각 자료원에 알려진 검색어로 1회 조회해 결과 건수와 소요 시간을 보고한다.
+    4대보험 요율표가 현행 법령과 어긋나지 않는지도 함께 확인한다 — 요율은 해마다 바뀌는데
+    표만 남고 갱신을 잊으면 보험료 계산이 조용히 전부 틀어진다.
     """
     import time as _t
 
@@ -1222,6 +1396,10 @@ def check_sources_health() -> dict:
         ("고용노동부 행정규칙", lambda: _law.search_admin_rules("취업규칙", org="고용노동부", display=1)["total"]),
         ("빠른인터넷상담", lambda: _counsel.list(page=1, unit=10, keyword="연차")["total"] or 0),
         ("산재판례 API(data.go.kr)", lambda: _comwel.count()),
+        ("행정심판례(4대보험)", lambda: _committee.search("decc", "건강보험료",
+                                                   display=1, search_body=True)["total"]),
+        ("건강보험분쟁조정위원회", lambda: _hidrc.list(page=1)["total"]),
+        ("국민연금 결정사례", lambda: _npsrv.list(page=1)["total"] or 0),
         ("사례 아카이브(로컬)", _archive_count),
     ]
     상태, 정상 = [], 0
@@ -1237,10 +1415,17 @@ def check_sources_health() -> dict:
                        "오류": f"{type(e).__name__}: {e}",
                        "소요초": round(_t.time() - t0, 2)})
     out = {"자료원상태": 상태, "정상": 정상, "전체": len(probes)}
+    try:
+        out["4대보험_요율표"] = si.verify_rates()
+    except Exception as e:                                      # noqa: BLE001
+        out["4대보험_요율표"] = {"상태": f"확인 못 함 — {type(e).__name__}: {str(e)[:120]}"}
     if 정상 < len(probes):
         out["안내"] = ("일부 자료원이 응답하지 않습니다 — 그 자료원의 검색 결과가 "
                      "0건이어도 자료 부존재로 판단하지 마세요. "
                      "AUTH_ERROR면 서버의 law.go.kr 기관코드·IP 등록 확인이 필요합니다.")
+    if str(out["4대보험_요율표"].get("상태", "")).startswith("불일치"):
+        out["요율경고"] = ("4대보험 요율표가 현행 법령과 다릅니다 — social_insurance.py의 표를 "
+                        "갱신하기 전에는 calc_social_insurance 결과를 쓰지 마세요.")
     return out
 
 

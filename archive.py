@@ -45,11 +45,20 @@ SOURCES = {
     "moel":    ("고용노동부 행정해석(질의회시)", "law.go.kr Open API target=moelCgmExpc — 질의요지·회답"),
     "eiac":    ("고용보험심사위원회 결정문", "law.go.kr Open API target=eiac — 주문·이유 전문"),
     "iaciac":  ("산업재해보상보험재심사위원회 결정문", "law.go.kr Open API target=iaciac — 쟁점·주문·이유 전문"),
-    "decc":    ("행정심판례(노동 관련)", "law.go.kr Open API target=decc — 노동 키워드로 추린 재결례"),
-    "admrul":  ("고용노동부 행정규칙(훈령·예규·고시)", "law.go.kr Open API target=admrul org=1492000"),
+    "decc":    ("행정심판례(노동·4대보험 관련)", "law.go.kr Open API target=decc — 노동·사회보험 키워드로 추린 재결례"),
+    "admrul":  ("행정규칙(고용노동부·보건복지부 훈령·예규·고시)",
+                "law.go.kr Open API target=admrul org=1492000·1352000"),
     "counsel": ("고용노동부 빠른인터넷상담", "moel.go.kr 빠른인터넷상담 게시판 질의·답변"),
     "qnabook": ("근로기준법 질의회시집(2018.4~2023.6)", "고용노동부 근로기준정책과 발간 PDF"),
     "comwel":  ("근로복지공단 산재보험 판례", "data.go.kr 근로복지공단 산재보험 판례 판결문 조회 서비스"),
+    # --- v1.3에서 추가: 법원·헌재·법제처 전수 + 4대보험 특별행정심판 ---
+    "prec":    ("법원 판례", "law.go.kr Open API target=prec — 판시사항·판결요지·판례내용 전문(전수)"),
+    "expc":    ("법제처 법령해석례", "law.go.kr Open API target=expc — 질의요지·회답·이유(전수)"),
+    "detc":    ("헌법재판소 결정례", "law.go.kr Open API target=detc — 판시사항·결정요지·전문(전수)"),
+    "hidrc":   ("건강보험분쟁조정위원회 재결례",
+                "simpan.go.kr 온라인행정심판 — 심판청구 재결문 PDF 전문"),
+    "npsrv":   ("국민연금 (재)심사청구 결정사례",
+                "nps.or.kr 자료실 — 처분내용·청구인주장·쟁점·판단"),
 }
 SOURCE_ALIASES = {
     "노동위원회": "nlrc", "노동위": "nlrc", "판정례": "nlrc",
@@ -61,6 +70,12 @@ SOURCE_ALIASES = {
     "빠른인터넷상담": "counsel", "상담": "counsel", "인터넷상담": "counsel",
     "질의회시집": "qnabook",
     "산재판례": "comwel", "근로복지공단": "comwel", "산재": "comwel",
+    "판례": "prec", "법원판례": "prec", "법원": "prec", "대법원": "prec",
+    "법령해석례": "expc", "법제처": "expc", "법령해석": "expc",
+    "헌재": "detc", "헌법재판소": "detc", "헌재결정례": "detc",
+    "건강보험분쟁조정위원회": "hidrc", "건강보험분쟁조정위": "hidrc",
+    "건강보험": "hidrc", "심판청구": "hidrc", "건보": "hidrc",
+    "국민연금": "npsrv", "국민연금심사청구": "npsrv", "연금": "npsrv", "심사청구": "npsrv",
 }
 
 _SCHEMA = """
@@ -342,7 +357,9 @@ def _date_fields(r: sqlite3.Row) -> dict:
     if not d:
         return {"일자": "미상", "일자_ISO": ""}
     if kind:
-        return {"일자": f"{d[:4]}년경 ({kind} — 선고·의결일 아님)", "일자_ISO": d, "일자근거": kind}
+        # 문구를 자료원에 안 맞게 박아 두면 안 된다 — '결정연도'(국민연금)에 "선고·의결일
+        # 아님"이 붙으면 어색하고, 요점은 어느 쪽이든 **확정 일자가 아니라는 것**이다
+        return {"일자": f"{d[:4]}년경 ({kind} — 확정 일자 아님)", "일자_ISO": d, "일자근거": kind}
     return {"일자": d, "일자_ISO": d}
 
 

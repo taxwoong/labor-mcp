@@ -28,6 +28,9 @@ def test_item_date_prefers_iso_then_source_specific_keys():
     assert vintage.item_date({"판정일": "2016.5.9."}) == "2016-05-09"
     assert vintage.item_date({"등록일": "2026.09.03"}) == "2026-09-03"
     assert vintage.item_date({"사건명": "x"}) == ""
+    # v1.3 원천 — 여기 없으면 일자가 멀쩡한 자료를 '일자미상'으로 세어 엉뚱한 주의가 붙는다
+    assert vintage.item_date({"재결일자": "2025-06-26"}) == "2025-06-26"   # 건강보험분쟁조정위
+    assert vintage.item_date({"결정년도": "2020년"}) == "2020-01-01"       # 국민연금 (연도만 공개)
 
 
 def test_warns_on_pre_turning_point_document():
