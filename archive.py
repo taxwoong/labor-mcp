@@ -152,8 +152,18 @@ def build_match(keyword: str) -> tuple:
     return " AND ".join(phrases), tokens
 
 
+# 단기(檀紀) → 서기 보정 기준. 1940~60년대 판례의 선고일자가 law.go.kr에 단기로 들어 있다
+# ("4293.12.28" = 1960년). 그대로 담으면 **1950년대 판례가 latest_first 최상단을 차지한다**
+# (2026-09-13 실측: 판례 45건). 서기에 4000년대는 없으므로 이 경계로 가른다.
+DANGI_OFFSET = 2333
+DANGI_MIN_YEAR = 4000
+
+
 def norm_date(value) -> str:
-    """'2016.5.9.' · '2023.06.21' · '20260626' · '2026-09-02' → 'YYYY-MM-DD'. 못 읽으면 ''."""
+    """'2016.5.9.' · '2023.06.21' · '20260626' · '2026-09-02' → 'YYYY-MM-DD'. 못 읽으면 ''.
+
+    연도가 4000 이상이면 단기로 보고 2333을 빼 서기로 바꾼다.
+    """
     s = str(value or "").strip()
     if not s:
         return ""
@@ -168,9 +178,12 @@ def norm_date(value) -> str:
     try:
         if not (1 <= int(mo) <= 12 and 1 <= int(d) <= 31):
             return ""
+        y_i = int(y)
     except ValueError:
         return ""
-    return f"{y}-{int(mo):02d}-{int(d):02d}"
+    if y_i >= DANGI_MIN_YEAR:
+        y_i -= DANGI_OFFSET
+    return f"{y_i:04d}-{int(mo):02d}-{int(d):02d}"
 
 
 def resolve_sources(spec) -> list:

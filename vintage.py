@@ -35,12 +35,16 @@ def iso_date(value) -> str:
         return ""
     y, mo, d = m.group(1), m.group(2) or "1", m.group(3) or "1"
     try:
-        mo_i, d_i = int(mo), int(d)
+        y_i, mo_i, d_i = int(y), int(mo), int(d)
     except ValueError:
         return ""
     if not (1 <= mo_i <= 12 and 1 <= d_i <= 31):
         return ""
-    return f"{y}-{mo_i:02d}-{d_i:02d}"
+    # 단기(檀紀) 보정 — 옛 판례 선고일자가 "4293.12.28"(=1960년)로 온다. 그대로 두면
+    # 1950년대 판례가 '가장 최근 자료'로 잡혀 시점범위와 전환점 대조가 통째로 어긋난다.
+    if y_i >= 4000:
+        y_i -= 2333
+    return f"{y_i:04d}-{mo_i:02d}-{d_i:02d}"
 
 
 # 자료원마다 일자 필드 이름이 다르다 — 앞에 있는 것부터 찾아 쓴다.

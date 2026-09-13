@@ -19,6 +19,8 @@ ingest_archive.py — 노무 사례 아카이브 적재 CLI (archive.py의 SQLit
 DB가 1GB에서 3~4GB로 늘어난다. 처음 받을 때는 `python ingest_archive.py prec`만 따로,
 가급적 야간에 돌릴 것. 중단해도 받은 만큼은 커밋되어 있고 다음 실행이 이어서 받는다.
 detc(38,672건)는 3시간 안팎, 나머지는 다 합쳐 10분이면 끝난다.
+detc는 약 5,000건이 **본문 미공개**다 — 헌재 지정재판부 각하·기각 결정은 사건명만 공개되고
+판시사항·결정요지·전문이 빈 값으로 온다. 장애가 아니므로 '실패'와 따로 세어 보고한다.
 
 증분 규칙: law.go.kr 계열은 목록을 최신순으로 **끝까지** 훑되(목록 호출은 100건 단위라 싸다)
 본문은 DB에 없는 일련번호만 받는다. 빠른인터넷상담은 목록 한 페이지가 2초라 "새 글이 하나도
@@ -120,6 +122,7 @@ class Runner:
         self.limit = int(limit or 0)
         self.max_pages = int(max_pages or 0)
         self.pdf_path = pdf_path
+        self.nobody = 0               # 원천이 본문을 내지 않는 문서 수 (자료원마다 초기화)
         self.committee = CommitteeClient()
         self.moel = MoelExpcClient()
 
@@ -139,7 +142,13 @@ class Runner:
         raise last
 
     def _batch(self, source: str, rows, fetch_body, map_doc):
-        """rows(목록 항목) 중 DB에 없는 것만 본문을 받아 저장. 반환 (추가, 실패)."""
+        """rows(목록 항목) 중 DB에 없는 것만 본문을 받아 저장. 반환 (추가, 실패).
+
+        **'본문 미공개'와 '조회 실패'는 다른 것이라 따로 센다** (self.nobody).
+        원천이 본문을 아예 안 내는 문서가 있다 — 헌재 지정재판부 각하 결정은 사건명만
+        공개되고 판시사항·결정요지·전문이 빈 값으로 온다(2026-09-13 실측 5,055건).
+        이걸 '실패'로 묶으면 매달 갱신할 때마다 "실패 5천 건"이 찍혀 진짜 장애를 가린다.
+        """
         known = set() if self.full else archive.known_ids(self.conn, source)
         added = failed = skipped = 0
         consecutive = 0
@@ -153,8 +162,8 @@ class Runner:
                 body = self._call(lambda: fetch_body(row), f"{source} 본문 {doc_id}")
                 consecutive = 0
             except LawNotFound as e:
-                LOG.info("%s %s 본문 없음 — 건너뜀 (%s)", source, doc_id, str(e)[:80])
-                failed += 1
+                LOG.info("%s %s 본문 미공개 — 건너뜀 (%s)", source, doc_id, str(e)[:80])
+                self.nobody += 1
                 continue
             except _TRANSIENT as e:
                 failed += 1
@@ -170,7 +179,8 @@ class Runner:
             if added % 50 == 0:
                 self.conn.commit()
             if added % 200 == 0:
-                LOG.info("%s 진행: 추가 %d · 실패 %d · 기존 %d · %.0f초", source, added, failed, skipped, time.time() - t0)
+                LOG.info("%s 진행: 추가 %d · 실패 %d · 본문 미공개 %d · 기존 %d · %.0f초",
+                         source, added, failed, self.nobody, skipped, time.time() - t0)
             if self.limit and added >= self.limit:
                 LOG.info("%s --limit %d 도달, 중단", source, self.limit)
                 break
@@ -734,10 +744,16 @@ def main(argv=None) -> int:
     for code in codes:
         t0 = time.time()
         try:
+            runner.nobody = 0
             added, failed = run_source(runner, code)
+            # 본문 미공개는 원천의 성질이지 장애가 아니다 — 상태를 OK로 두되 건수는 남긴다
             status = "OK" if not failed else f"OK(실패 {failed})"
-            archive.set_state(conn, code, status, added, f"{time.time() - t0:.0f}초")
-            LOG.info("=== %s 완료: 추가 %d · 실패 %d · %.0f초", code, added, failed, time.time() - t0)
+            note = f"{time.time() - t0:.0f}초"
+            if runner.nobody:
+                note += f" · 본문 미공개 {runner.nobody}건"
+            archive.set_state(conn, code, status, added, note)
+            LOG.info("=== %s 완료: 추가 %d · 실패 %d · 본문 미공개 %d · %.0f초",
+                     code, added, failed, runner.nobody, time.time() - t0)
         except KeyboardInterrupt:
             conn.commit()
             archive.set_state(conn, code, "INTERRUPTED", 0, "사용자 중단")

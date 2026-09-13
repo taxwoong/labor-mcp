@@ -50,9 +50,19 @@ def test_build_match_phrases_and_tokens():
 @pytest.mark.parametrize("raw,expected", [
     ("2016.5.9.", "2016-05-09"), ("2023.06.21", "2023-06-21"), ("20260626", "2026-06-26"),
     ("2026-09-02", "2026-09-02"), ("2026.13.01", ""), ("", ""), ("없음", ""),
+    # 단기(檀紀) — 1940~60년대 판례 선고일자가 law.go.kr에 이렇게 들어 있다.
+    # 그대로 담으면 1950년대 판례가 latest_first 최상단을 차지한다 (실측 45건).
+    ("4293.12.28", "1960-12-28"), ("4284-12-31", "1951-12-31"), ("42810105", "1948-01-05"),
 ])
 def test_norm_date(raw, expected):
     assert archive.norm_date(raw) == expected
+
+
+def test_dangi_conversion_does_not_touch_ordinary_years():
+    """4000년 경계로만 가른다 — 서기 연도는 손대지 않는다."""
+    assert archive.norm_date("3999.01.01") == "3999-01-01"
+    assert archive.norm_date("4000.01.01") == "1667-01-01"
+    assert archive.norm_date("1947.03.23") == "1947-03-23"
 
 
 def test_resolve_sources_aliases_and_errors():
