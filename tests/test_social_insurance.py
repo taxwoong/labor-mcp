@@ -58,6 +58,22 @@ def test_pension_band_applies_july_to_june():
     assert si.pension_income_band("2026-07-01") == (410_000, 6_590_000, 2026)
 
 
+def test_pension_base_truncates_below_1000_won():
+    """기준소득월액은 신고 소득월액에서 천원 미만을 버린 뒤 상·하한을 적용한다(시행령 §5①).
+
+    예전: 2,345,678원을 그대로 곱해 111,410원 → 2,345,000원 × 4.75% = 111,387.5 → 111,380원.
+    """
+    r = si.calc_social_insurance(2_345_678, "2026-10-01")["결과"]
+    assert r["근로자부담"]["국민연금"] == 111_380
+    assert r["사업주부담"]["국민연금"] == 111_380
+    # 천원 단위로 떨어지는 금액은 그대로
+    assert si.calc_social_insurance(3_000_000, "2026-10-01")["결과"]["근로자부담"]["국민연금"] == 142_500
+    # 두루누리 연금 지원액도 같은 기준: 1,234,000 × 4.75% = 58,615 → 58,610 × 80% = 46,888 → 46,880
+    # (절사 없이 1,234,567원으로 계산하면 46,910원)
+    s = si.check_premium_support(1_234_567, 3, as_of="2026-10-01", property_tax_base=1, global_income=1)
+    assert s["결과"]["월지원액"]["연금_근로자분"] == 46_880
+
+
 def test_ei_rate_changes_mid_year():
     """실업급여 요율은 연중에 바뀐다 — 연도 키로 잡으면 2019·2022년이 틀린다."""
     assert si.ei_unemployment_rate("2019-09-30") == 0.013
@@ -82,7 +98,7 @@ def test_premium_2025_matches_published_figures():
     """2025년 보수월액 300만원 — 공단 공표 계산과 일치해야 한다."""
     r = si.calc_social_insurance(3_000_000, "2025-09-01")["결과"]
     assert r["근로자부담"]["건강보험"] == 106_350        # 300만 × 7.09% ÷ 2
-    assert r["근로자부담"]["장기요양"] == 13_770         # 212,700 × 12.95% ÷ 2
+    assert r["근로자부담"]["장기요양"] == 13_770         # 근로자 건보료 106,350 × 12.95% = 13,772.3
     assert r["근로자부담"]["국민연금"] == 135_000        # 300만 × 4.5%
     assert r["근로자부담"]["고용보험"] == 27_000         # 300만 × 0.9%
     assert r["사업주부담"]["고용보험_고용안정직능"] == 7_500   # 300만 × 0.25%
@@ -91,8 +107,59 @@ def test_premium_2025_matches_published_figures():
 def test_premium_2026_reflects_new_rates():
     r = si.calc_social_insurance(3_000_000, "2026-09-01")["결과"]
     assert r["근로자부담"]["건강보험"] == 107_850        # 7.19%
-    assert r["근로자부담"]["장기요양"] == 14_170         # 215,700 × 13.14% ÷ 2
+    assert r["근로자부담"]["장기요양"] == 14_170         # 근로자 건보료 107,850 × 13.14% = 14,171.5
     assert r["근로자부담"]["국민연금"] == 142_500        # 4.75% (부칙 특례)
+
+
+def test_ltc_uses_employee_health_premium():
+    """장기요양 = 근로자 건강보험료(10원 미만 절사 후) × 비율 → 10원 미만 절사, 사업주도 같은 금액.
+
+    2,345,678원(2026): 건강 84,327.1 → 84,320 × 13.14% = 11,079.6 → 11,070원.
+    노사 합계(168,654.2)에 곱해 반으로 나누면 11,080원 — 급여대장 실무와 10원 다르다.
+    """
+    r = si.calc_social_insurance(2_345_678, "2026-10-01")["결과"]
+    assert r["근로자부담"]["건강보험"] == 84_320
+    assert r["근로자부담"]["장기요양"] == r["사업주부담"]["장기요양"] == 11_070
+
+
+def test_ltc_relief_disability_30pct():
+    """장기요양 30% 경감(심한 장애인·희귀난치성질환자 — 시행령 §5②, 장기요양보험료 경감고시).
+    300만원: 14,170 × 70% = 9,919 → 9,910원(사업주분도 같다). 건강보험은 그대로."""
+    out = si.calc_social_insurance(3_000_000, "2026-10-01", ltc_relief="장애인등")
+    r = out["결과"]
+    assert (r["근로자부담"]["건강보험"], r["근로자부담"]["장기요양"], r["사업주부담"]["장기요양"]) == (
+        107_850, 9_910, 9_910)
+    assert r["경감"] == {"건강보험": None, "장기요양": "장애인등"}
+    assert any("경감" in w for w in out["주의사항"])
+
+
+def test_health_relief_flows_into_ltc():
+    """섬·벽지 50%(보험료 경감고시 §3): 107,850 × 50% = 53,925 → 53,920원.
+    장기요양은 경감 뒤 건강보험료로 계산(노인장기요양보험법 §9①): 53,920 × 13.14% → 7,080원."""
+    r = si.calc_social_insurance(3_000_000, "2026-10-01", health_relief="섬벽지")["결과"]
+    assert (r["근로자부담"]["건강보험"], r["근로자부담"]["장기요양"]) == (53_920, 7_080)
+    assert (r["사업주부담"]["건강보험"], r["사업주부담"]["장기요양"]) == (53_920, 7_080)
+    both = si.calc_social_insurance(3_000_000, "2026-10-01", health_relief="섬벽지", ltc_relief="장애인등")
+    assert both["결과"]["근로자부담"]["장기요양"] == 4_950          # 7,080 × 70% = 4,956
+
+
+def test_overseas_work_halves_rate_before_cap():
+    """국외 근무(법 §73②)는 보험료율을 절반으로 — 상한 적용 전이라 고소득자는 섬·벽지 경감과 다르다.
+    2억원: 2억 × 3.595% = 7,190,000원(상한 미만) → 각 3,595,000원 / 섬·벽지: 상한 9,183,480 ÷ 2 × 50%."""
+    over = si.calc_social_insurance(200_000_000, "2026-10-01", health_relief="국외근무")["결과"]
+    island = si.calc_social_insurance(200_000_000, "2026-10-01", health_relief="섬벽지")["결과"]
+    assert over["근로자부담"]["건강보험"] == 3_595_000
+    assert island["근로자부담"]["건강보험"] == 2_295_870
+
+
+def test_exemption_and_unknown_relief():
+    out = si.calc_social_insurance(3_000_000, "2026-10-01", health_relief="면제", ltc_relief="장애인등")
+    r = out["결과"]
+    assert (r["근로자부담"]["건강보험"], r["근로자부담"]["장기요양"]) == (0, 0)
+    assert r["근로자부담"]["국민연금"] == 142_500 and r["근로자부담"]["고용보험"] == 27_000
+    assert any("제74조③" in w for w in out["주의사항"])
+    with pytest.raises(ValueError, match="섬벽지"):
+        si.calc_social_insurance(3_000_000, "2026-10-01", health_relief="농어촌")   # 지역가입자만
 
 
 def test_no_floating_point_dust_in_floor10():

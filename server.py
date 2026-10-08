@@ -260,7 +260,8 @@ def labor_law_article(
 
     주요 노동법령은 통칭으로 불러도 된다: 근기법, 기간제법, 파견법, 최저임금법,
     남녀고용평등법, 노조법, 산안법, 퇴직급여법, 외국인고용법. 동명 시행령 혼입을
-    막기 위해 알려진 법령은 법령ID 필터가 자동 적용된다.
+    막기 위해 알려진 법령은 법령ID 필터가 자동 적용되고, 그 밖의 법령은 이름이 정확히
+    같은 법령으로 좁힌다(예: '노인장기요양보험법'을 물으면 시행령·시행규칙은 빼고 찾는다).
 
     Args:
         law: 법령명 (예: "근로기준법", "근기법", "근로기준법 시행령")
@@ -959,13 +960,17 @@ def calc_social_insurance(
     industrial_accident_rate: float = 0.0,
     apply_caps: bool = True,
     pension_income: float = 0.0,
+    health_relief: str = "",
+    ltc_relief: str = "",
 ) -> dict:
     """직장가입자 1명의 월 4대보험료 계산 (건강보험·장기요양·국민연금·고용보험, 근로자/사업주별).
 
     요율·상한은 전부 법령·고시 원문에서 확인한 표를 쓰며, 표에 없는 연도는 조용히 최신값을
     쓰지 않고 오류를 냅니다. 특히 **국민연금 요율은 2026년부터 매년 오릅니다** — 부칙 특례로
     2026년 각 4.75%(합계 9.5%), 2032년 각 6.25%, 2033년부터 본칙 6.5%(합계 13%).
-    장기요양보험료는 보수월액이 아니라 **건강보험료**에 비율을 곱해 구합니다.
+    장기요양보험료는 보수월액이 아니라 **근로자 건강보험료**(경감·면제 뒤, 10원 미만 절사 후)에
+    비율을 곱해 구합니다 — 급여대장 실무와 같은 방식이고 사업주분도 같은 금액입니다.
+    국민연금 기준소득월액은 천원 미만을 버린 뒤 상·하한을 적용합니다.
 
     산재보험료는 업종별 고시 요율이 있어야 계산되므로 기본값 0에서는 빼고 계산합니다.
     요율은 labor_admin_rule_search("사업종류별 산재보험료율")로 찾아 넣으세요.
@@ -979,11 +984,17 @@ def calc_social_insurance(
         industrial_accident_rate: 산재보험료율 (예: 0.0085). 0이면 산재 제외
         apply_caps: 건강보험료 상·하한과 연금 기준소득월액 상·하한 적용 여부
         pension_income: 연금 기준소득월액을 보수월액과 달리 잡을 때만
+        health_relief: 건강보험 경감·면제 — "섬벽지"(50%, 섬·벽지 거주 또는 섬·벽지 사업장 근무) ·
+            "군인"(20%, 군부대 소재 지역) · "국외근무"(보험료율 50%, 국내 거주 피부양자 있음) ·
+            "면제"(국외 체류로 국내 피부양자 없음·현역병 등·수용). 비우면 경감 없음
+        ltc_relief: 장기요양 경감 — "장애인등"(30%, 장기요양 수급자가 아닌 심한 장애인·
+            희귀난치성질환자). 비우면 경감 없음
     """
     return si.calc_social_insurance(
         monthly_wage, as_of, scale=scale,
         industrial_accident_rate=industrial_accident_rate,
-        apply_caps=apply_caps, pension_income=pension_income)
+        apply_caps=apply_caps, pension_income=pension_income,
+        health_relief=health_relief, ltc_relief=ltc_relief)
 
 
 @mcp.tool(annotations=ToolAnnotations(readOnlyHint=True, openWorldHint=False, idempotentHint=True))

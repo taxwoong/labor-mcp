@@ -10,7 +10,7 @@ social_insurance.py — 4대보험(건강보험·장기요양·국민연금·고
 출처를 값 옆에 적어 두었으니 갱신할 때도 같은 방식으로 확인할 것 (verify_rates()가
 현행 법령과 표를 대조한다 — check_sources_health에서 호출).
 
-특히 주의할 세 가지 — 셋 다 "당연히 이럴 것"이라고 넘겨짚으면 틀린다:
+특히 주의할 네 가지 — 모두 "당연히 이럴 것"이라고 넘겨짚으면 틀린다:
 
 1. **국민연금 요율은 2026년부터 매년 오른다.** 국민연금법 제88조③ 본칙은 기여금·부담금
    각 6.5%(합계 13%)지만, 부칙(법률 제20903호, 2025.4.2 공포) 제4조 특례가 2026~2032년을
@@ -19,7 +19,11 @@ social_insurance.py — 4대보험(건강보험·장기요양·국민연금·고
    2023년부터는 '건강보험료 × (장기요양보험료율 ÷ 건강보험료율)'이고 시행령의 요율 자체가
    소득 대비로 표기된다 (노인장기요양보험법 제9조①).
 3. **국민연금 기준소득월액 상·하한의 적용기간은 7월~다음 해 6월**이다 (국민연금법 시행령
-   제5조④). 달력연도로 잡으면 상·하한이 반년씩 밀린다.
+   제5조④). 달력연도로 잡으면 상·하한이 반년씩 밀린다. 기준소득월액은 신고 소득월액에서
+   **천원 미만을 버린 뒤** 상·하한을 적용한다 (같은 조①).
+4. **장기요양보험료는 근로자 건강보험료(10원 미만 절사 후)에 비율을 곱한다** — 급여대장 실무와
+   같은 방식이고, 노사 합계에 곱해 반으로 나누면 근로자분이 10원 많게 나오는 금액이 있다.
+   건강보험 경감·면제를 먼저 적용한 뒤의 건강보험료로 계산한다 (노인장기요양보험법 제9조①).
 """
 from datetime import date
 from decimal import Decimal, ROUND_FLOOR
@@ -28,7 +32,7 @@ __all__ = [
     "health_rate", "ltc_rate", "ltc_ratio", "pension_rate", "pension_income_band",
     "health_premium_cap", "ei_unemployment_rate", "ei_stability_rate",
     "calc_social_insurance", "check_premium_support", "verify_rates",
-    "SUPPORTED_YEARS",
+    "SUPPORTED_YEARS", "HEALTH_RELIEF", "LTC_RELIEF",
 ]
 
 
@@ -139,6 +143,29 @@ PREMIUM_SUPPORT = {
     "지원기간_개월": 36,              # 2018-01-01 이후 누적
 }
 
+# 건강보험료 경감·면제 (직장가입자 보수월액보험료) — 근로자마다 하나를 고른다. (방식, 비율, 근거)
+#   rate      보험료율에 (1 − 비율)을 곱한다 (월 보험료 상·하한 적용 전) — 국외 근무
+#   reduction 근로자분 보험료에 (1 − 비율)을 곱하고 10원 미만 절사, 사업주분도 같은 금액
+#   exempt    면제
+# 근거: 국민건강보험법 제73조②·제74조·제75조, 같은 법 시행령 제45조, 시행규칙 제46조,
+#       보건복지부 고시 제2025-221호 「보험료 경감고시」(2026-01-01 시행) — 2026-10-09 원문 확인.
+# 휴직자 경감(고시 제8조)은 휴직 전 보수월액과의 차액 방식이라 이 표로 계산하지 않는다.
+HEALTH_RELIEF = {
+    "섬벽지": ("reduction", 0.5, "보험료 경감고시 제3조 — 섬·벽지 지역 거주 또는 섬·벽지 사업장 근무"),
+    "군인": ("reduction", 0.2, "보험료 경감고시 제5조③ — 군부대 소재 지역에 거주·근무하는 직장가입자인 군인"),
+    "국외근무": ("rate", 0.5, "국민건강보험법 제73조② — 국외 업무 종사(국내 거주 피부양자 있음), "
+                             "보험료율의 100분의 50"),
+    "면제": ("exempt", 1.0, "국민건강보험법 제74조① — 국외 체류(국내 거주 피부양자 없음)·"
+                           "현역병 등 군 복무·교정시설 수용"),
+}
+
+# 장기요양보험료 경감 — 노인장기요양보험법 제10조, 같은 법 시행령 제5조②,
+# 보건복지부 고시 제2019-130호 「장기요양보험료 경감고시」 — 2026-10-09 원문 확인.
+LTC_RELIEF = {
+    "장애인등": ("reduction", 0.3, "노인장기요양보험법 시행령 제5조② — 장기요양 수급자가 아닌 "
+                                   "심한 장애인·희귀난치성질환자 100분의 30"),
+}
+
 SUPPORTED_YEARS = sorted(set(HEALTH_RATE) & set(LTC_RATE))
 
 
@@ -247,11 +274,29 @@ def _floor10(x) -> int:
     return int((v / 10).to_integral_value(rounding=ROUND_FLOOR) * 10)
 
 
+def _floor1000(x) -> Decimal:
+    """국민연금 기준소득월액은 신고한 소득월액에서 천원 미만을 버린 금액이다
+    (국민연금법 시행령 제5조①). 상·하한은 버린 뒤에 적용한다."""
+    v = _dec(x).quantize(_DUST) if isinstance(x, float) else _dec(x)
+    return (v / 1000).to_integral_value(rounding=ROUND_FLOOR) * 1000
+
+
+def _relief(table: dict, code: str, what: str):
+    """경감·면제 구분 → (방식, 비율, 근거). 비어 있으면 None, 모르는 구분이면 오류."""
+    if not code:
+        return None
+    if code not in table:
+        raise ValueError(f"알 수 없는 {what} 구분 {code!r} — 사용 가능: {', '.join(table)}")
+    return table[code]
+
+
 def calc_social_insurance(monthly_wage: float, as_of: str = "", *,
                           scale: str = "150명 미만",
                           industrial_accident_rate: float = 0.0,
                           apply_caps: bool = True,
-                          pension_income: float = 0.0) -> dict:
+                          pension_income: float = 0.0,
+                          health_relief: str = "",
+                          ltc_relief: str = "") -> dict:
     """직장가입자 1명의 월 4대보험료를 계산한다.
 
     monthly_wage: 보수월액 (비과세 제외한 과세 보수 월액)
@@ -260,6 +305,8 @@ def calc_social_insurance(monthly_wage: float, as_of: str = "", *,
     industrial_accident_rate: 산재보험료율 (업종별 고시값, 예: 0.0085). 0이면 산재는 계산하지 않는다.
     apply_caps:   건강보험료 상·하한, 연금 기준소득월액 상·하한 적용 여부
     pension_income: 연금 기준소득월액을 보수월액과 달리 잡을 때만 지정 (기본은 보수월액)
+    health_relief: 건강보험 경감·면제 구분 (HEALTH_RELIEF — 섬벽지·군인·국외근무·면제). 기본 없음
+    ltc_relief:   장기요양 경감 구분 (LTC_RELIEF — 장애인등). 기본 없음
 
     반환은 프로젝트 공통 규약 {"결과", "계산과정", "근거", "주의사항"}.
     """
@@ -272,41 +319,67 @@ def calc_social_insurance(monthly_wage: float, as_of: str = "", *,
 
     # --- 건강보험 -----------------------------------------------------------
     h_rate = health_rate(year)
-    h_total_raw = wage * _dec(h_rate)
+    hr = _relief(HEALTH_RELIEF, health_relief, "건강보험 경감·면제")
+    lr = _relief(LTC_RELIEF, ltc_relief, "장기요양 경감")
+    eff_rate = _dec(h_rate) * (1 - _dec(hr[1])) if hr and hr[0] == "rate" else _dec(h_rate)
+    h_total_raw = wage * eff_rate
     hi_cap, lo_cap = health_premium_cap(year) if apply_caps else (None, None)
     h_total = h_total_raw
-    if apply_caps:
-        if h_total_raw > hi_cap:
-            h_total = _dec(hi_cap)
-            steps.append(f"건강보험료 상한 적용: {h_total_raw:,.0f}원 → {hi_cap:,}원")
-        elif h_total_raw < lo_cap:
-            h_total = _dec(lo_cap)
-            steps.append(f"건강보험료 하한 적용: {h_total_raw:,.0f}원 → {lo_cap:,}원")
-    h_emp = _floor10(h_total / 2)
-    h_er = _floor10(h_total / 2)
-    steps.insert(0, f"건강보험료 = 보수월액 {wage:,.0f} × {_pct(h_rate)} = {h_total_raw:,.0f}원 (노사 합계)")
-    steps.append(f"건강보험 근로자 {h_emp:,}원 · 사업주 {h_er:,}원 (각 50%, 10원 미만 절사)")
-    refs.append(f"국민건강보험법 제73조·제76조①, 같은 법 시행령 제44조①({year}년 1만분의 {h_rate*10000:.0f})")
-    if apply_caps:
-        refs.append(f"보건복지부 고시 「월별 건강보험료액의 상한과 하한」({year}년 상한 {hi_cap:,}원·하한 {lo_cap:,}원)")
+    if hr and hr[0] == "exempt":
+        h_emp = h_er = 0
+        steps.append(f"건강보험 면제({health_relief}): 0원 — {hr[2]}")
+        refs.append(hr[2])
+    else:
+        if apply_caps:
+            if h_total_raw > hi_cap:
+                h_total = _dec(hi_cap)
+                steps.append(f"건강보험료 상한 적용: {h_total_raw:,.0f}원 → {hi_cap:,}원")
+            elif h_total_raw < lo_cap:
+                h_total = _dec(lo_cap)
+                steps.append(f"건강보험료 하한 적용: {h_total_raw:,.0f}원 → {lo_cap:,}원")
+        h_emp = _floor10(h_total / 2)
+        rate_txt = (_pct(h_rate) if eff_rate == _dec(h_rate) else
+                    f"({_pct(h_rate)} × {_pct(1 - _dec(hr[1]))}, {health_relief})")
+        steps.insert(0, f"건강보험료 = 보수월액 {wage:,.0f} × {rate_txt} = {h_total_raw:,.0f}원 (노사 합계)")
+        if hr and hr[0] == "reduction":
+            before = h_emp
+            h_emp = _floor10(_dec(before) * (1 - _dec(hr[1])))
+            steps.append(f"건강보험 경감({health_relief} {_pct(hr[1])}): 근로자분 {before:,} × "
+                         f"{_pct(1 - _dec(hr[1]))} → {h_emp:,}원 — {hr[2]}")
+        h_er = h_emp
+        steps.append(f"건강보험 근로자 {h_emp:,}원 · 사업주 {h_er:,}원 (각 50%, 10원 미만 절사)")
+        refs.append(f"국민건강보험법 제73조·제76조①, 같은 법 시행령 제44조①({year}년 1만분의 {h_rate*10000:.0f})")
+        if apply_caps:
+            refs.append(f"보건복지부 고시 「월별 건강보험료액의 상한과 하한」({year}년 상한 {hi_cap:,}원·하한 {lo_cap:,}원)")
+        if hr:
+            refs.append(hr[2])
 
     # --- 장기요양보험 -------------------------------------------------------
     l_ratio = ltc_ratio(year)
-    l_total = h_total * _dec(l_ratio)
-    l_emp = _floor10(l_total / 2)
-    l_er = _floor10(l_total / 2)
+    l_raw = _dec(h_emp) * _dec(l_ratio)
+    l_emp = _floor10(l_raw)
     if year >= LTC_BASE_CHANGED_YEAR:
-        steps.append(f"장기요양보험료 = 건강보험료 {h_total:,.0f} × (장기요양요율 {_pct(ltc_rate(year))} "
-                     f"÷ 건강보험료율 {_pct(h_rate)} = {_pct(l_ratio)}) = {l_total:,.0f}원")
+        steps.append(f"장기요양보험료 = 근로자 건강보험료 {h_emp:,} × (장기요양요율 {_pct(ltc_rate(year))} "
+                     f"÷ 건강보험료율 {_pct(h_rate)} = {_pct(l_ratio)}) = {l_raw:,.2f} → {l_emp:,}원")
         refs.append(f"노인장기요양보험법 제9조①, 같은 법 시행령 제4조({year}년 100만분의 {ltc_rate(year)*1_000_000:,.0f})")
     else:
-        steps.append(f"장기요양보험료 = 건강보험료 {h_total:,.0f} × {_pct(l_ratio)} = {l_total:,.0f}원")
+        steps.append(f"장기요양보험료 = 근로자 건강보험료 {h_emp:,} × {_pct(l_ratio)} = {l_raw:,.2f} → {l_emp:,}원")
         refs.append(f"노인장기요양보험법 시행령 제4조({year}년 1만분의 {l_ratio*10000:,.0f} — 건강보험료 대비)")
-    steps.append(f"장기요양 근로자 {l_emp:,}원 · 사업주 {l_er:,}원")
+    if lr and l_emp:
+        before = l_emp
+        l_emp = _floor10(_dec(before) * (1 - _dec(lr[1])))
+        steps.append(f"장기요양 경감({ltc_relief} {_pct(lr[1])}): {before:,} × {_pct(1 - _dec(lr[1]))} "
+                     f"→ {l_emp:,}원 — {lr[2]}")
+        refs.append(f"{lr[2]}, 보건복지부 고시 「장기요양보험료 경감고시」")
+    l_er = l_emp
+    steps.append(f"장기요양 근로자 {l_emp:,}원 · 사업주 {l_er:,}원 (사업주분은 근로자분과 같은 금액)")
 
     # --- 국민연금 -----------------------------------------------------------
     p_rate = pension_rate(year)
-    p_base_raw = _dec(pension_income) if pension_income else wage
+    p_income = _dec(pension_income) if pension_income else wage
+    p_base_raw = _floor1000(p_income)
+    if p_base_raw != p_income:
+        steps.append(f"연금 기준소득월액 천원 미만 절사: {p_income:,.0f}원 → {p_base_raw:,.0f}원")
     p_lo, p_hi, band_year = pension_income_band(d)
     p_base = p_base_raw
     if apply_caps:
@@ -354,7 +427,14 @@ def calc_social_insurance(monthly_wage: float, as_of: str = "", *,
     er_total = h_er + l_er + p_er + ei_er_u + ei_er_s + ia_er
 
     warns.append("건강보험·장기요양·고용보험은 법률에 단수 처리 규정이 없어 공단 실무(10원 미만 절사)를 "
-                 "따랐습니다. 실제 고지액은 공단 부과 결과와 대조하세요.")
+                 "따랐습니다. 장기요양은 근로자 건강보험료에 비율을 곱했습니다(급여대장 실무) — 노사 합계에 "
+                 "곱해 반으로 나누면 10원 차이가 나는 금액이 있습니다. 실제 고지액은 공단 부과 결과와 대조하세요.")
+    if (hr and hr[0] == "reduction") or (lr and l_emp):
+        warns.append("경감 금액은 근로자분에 (1 − 경감률)을 곱한 뒤 10원 미만 절사하고 사업주분도 같은 금액으로 "
+                     "계산했습니다 — 경감 적용 월(사유 발생 다음 달부터 등)과 금액은 공단 고지로 확인하세요.")
+    if hr and hr[0] == "exempt":
+        warns.append("면제는 급여정지 사유가 생긴 날이 속한 달의 다음 달부터 사유가 없어진 날이 속한 달까지 "
+                     "적용합니다(국민건강보험법 제74조③). 국외 체류는 국내 거주 피부양자가 없을 때만 면제입니다.")
     warns.append("보수월액은 비과세를 뺀 과세 보수 기준입니다. 식대·차량유지비 등 비과세 항목을 "
                  "포함하면 보험료가 과대 계산됩니다.")
     warns.append("최종 판단은 공인노무사 확인이 필요합니다.")
@@ -372,6 +452,7 @@ def calc_social_insurance(monthly_wage: float, as_of: str = "", *,
                 "산재보험": ia_er, "합계": er_total,
             },
             "노사합계": emp_total + er_total,
+            "경감": {"건강보험": health_relief or None, "장기요양": ltc_relief or None},
             "적용요율": {
                 "건강보험": h_rate, "장기요양_건강보험료대비": l_ratio,
                 "국민연금_각각": p_rate, "고용보험_실업급여": ei_u,
@@ -439,7 +520,7 @@ def check_premium_support(monthly_wage: float, employee_count: int, *,
     ei_er_prem = ei_emp_prem + _floor10(wage * _dec(ei_stability_rate("150명 미만")))
     p_rate = pension_rate(d.year)
     p_lo, p_hi, _ = pension_income_band(d)
-    p_base = min(max(wage, _dec(p_lo)), _dec(p_hi))
+    p_base = min(max(_floor1000(wage), _dec(p_lo)), _dec(p_hi))
     p_prem = _floor10(p_base * _dec(p_rate))
 
     def _sup(prem, cap):

@@ -19,7 +19,7 @@ law.go.kr 클라이언트(`law_go_kr.py`)와 인증(OC 키·IP 화이트리스�
 ![Python](https://img.shields.io/badge/python-3.10%2B-blue)
 ![MCP](https://img.shields.io/badge/MCP-streamable--http-black)
 ![tools](https://img.shields.io/badge/tools-25-brightgreen)
-![status](https://img.shields.io/badge/version-v1.3-informational)
+![status](https://img.shields.io/badge/version-v1.3.1-informational)
 ![license](https://img.shields.io/badge/license-MIT-green)
 
 ```bash
@@ -156,6 +156,9 @@ v1.3에서 더한 자료원은 판례 7~8시간 · 헌재결정례 3시간 · �
 보험료를 근로자/사업주별로), `check_premium_support`(두루누리 지원 요건·월 지원액).
 요율·상한은 전부 법령·고시 원문에서 확인한 값이고, 표에 없는 연도는 조용히 최신값을 쓰지
 않고 오류를 냅니다. 연도별 근거는 `labor_resource("table/4대보험-요율")`.
+v1.3.1부터 `calc_social_insurance`는 법령상 경감·면제를 인자로 받습니다 — 건강보험
+`health_relief`(섬·벽지 50%·군인 20%·국외근무 요율 50%·면제), 장기요양 `ltc_relief`
+(장애인 등 30%). 근거는 `labor_resource("table/4대보험-감면지원")`.
 
 > **국민연금 요율은 2026년부터 매년 오릅니다.** 국민연금법 제88조③ 본칙은 각 6.5%지만
 > 부칙(법률 제20903호) 제4조 특례가 2026~2032년을 따로 정합니다 — 2026년은 **각 4.75%

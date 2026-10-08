@@ -230,9 +230,17 @@ class TestMinimumWage:
 
     def test_미등록_연도는_명시적_오류(self):
         with pytest.raises(ValueError):
-            check_minimum_wage([item("기본급", 2_000_000)], 40, 2027)
+            check_minimum_wage([item("기본급", 2_000_000)], 40, 2099)
         with pytest.raises(ValueError):
-            lc.minimum_wage(2027)
+            lc.minimum_wage(2099)
+
+    def test_2027_최저임금_10700원(self):
+        """고용노동부 고시 제2026-60호(2026-08-05). 월 환산 10,700 × 209 = 2,236,300원."""
+        assert lc.minimum_wage(2027) == 10_700
+        r = check_minimum_wage([item("기본급", 2_236_300)], 40, 2027)
+        assert r["결과"]["위반여부"] is False
+        r = check_minimum_wage([item("기본급", 2_236_299)], 40, 2027)
+        assert r["결과"]["위반여부"] is True
 
 
 # ---------------------------------------------------------------------------
