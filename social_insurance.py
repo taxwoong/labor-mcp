@@ -587,6 +587,13 @@ def verify_rates(year: int = 0) -> dict:
     out = {"연도": year, "항목": []}
 
     def _row(name, expected, got, ref):
+        if expected is None:
+            # 요율표에 그 해 값이 없다 — 예전에는 abs(got - None)이 TypeError가 되어 '조회 실패'로 적히고
+            # 전체 상태가 'OK'로 나갔다 (2026-10-09 리뷰 재현: verify_rates(2027)). 원천 실패와 표 누락을 구분한다
+            out["항목"].append({"항목": name, "표의 값": None, "법령 값": got, "일치": False,
+                               "근거": f"{ref} — 표에 {year}년 값 없음, 요율표 갱신 필요"})
+            out.setdefault("표미갱신", []).append(name)
+            return
         ok = (got is not None) and abs(got - expected) < 1e-9
         out["항목"].append({"항목": name, "표의 값": expected, "법령 값": got,
                            "일치": ok if got is not None else None, "근거": ref})
@@ -601,7 +608,9 @@ def verify_rates(year: int = 0) -> dict:
     def _article(law_name, art_no):
         rows = c.search_laws(law_name, display=5)
         hit = next((r for r in rows if (r.get("법령명") or "").strip() == law_name), rows[0])
-        return re.sub(r"\s+", " ", c.law_article(hit["MST"], art_no).get("원문", ""))
+        # 현행 행의 시행일 기준 통합본 — MST만 주면 공포 당시 원문이라 늦게 공포된 개정이 빠진다
+        art = c.law_article(hit["MST"], art_no, ef_yd=hit.get("시행일자", ""))
+        return re.sub(r"\s+", " ", art.get("원문", ""))
 
     try:
         t = _article("국민건강보험법 시행령", "44")
@@ -631,6 +640,9 @@ def verify_rates(year: int = 0) -> dict:
 
     checked = [i for i in out["항목"] if i["일치"] is not None]
     bad = [i for i in checked if not i["일치"]]
+    if out.get("표미갱신"):   # '불일치'로 시작해야 check_sources_health가 요율경고를 낸다
+        out["상태"] = f"불일치 — 요율표 미갱신: {year}년 값이 없음 ({', '.join(out['표미갱신'])}) — 요율표를 갱신하세요"
+        return out
     out["상태"] = ("OK" if checked and not bad else
                    ("불일치 — 요율표를 갱신하세요" if bad else "확인 못 함 — 원천 조회 실패"))
     return out
