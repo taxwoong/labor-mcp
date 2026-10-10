@@ -520,32 +520,71 @@ class LawGoKrClient:
         } for it in items]
 
     # ---------- 법령: 연혁(시행본) 목록 ----------
-    def law_history(self, law_name: str, law_id: str = "", max_rows: int = 500):
-        """target=eflaw 연혁 시행본 전체 목록. law_id를 주면 그 본법만 필터
-        (예: 부가가치세법=001571 — 같은 이름 하위법령 혼입 방지)."""
-        rows = []
-        page = 1
+    @staticmethod
+    def _eflaw_row(it: dict) -> dict:
+        return {
+            "법령명": it.get("법령명한글", ""),
+            "법령ID": it.get("법령ID", ""),
+            "MST": it.get("법령일련번호", ""),
+            "시행일자": it.get("시행일자", ""),
+            "공포일자": it.get("공포일자", ""),
+            "공포번호": it.get("공포번호", ""),
+            "제개정구분": it.get("제개정구분명", ""),
+        }
+
+    def _eflaw_rows(self, max_rows: int, **query) -> list:
+        """target=eflaw 검색을 100건씩 쪽 넘겨 모은다. query는 query=<법령명> 또는 LID=<법령ID>.
+        한 쪽이 100건 미만이면 마지막 쪽이다 — 빈 쪽을 한 번 더 요청하지 않는다."""
+        rows, page = [], 1
         while len(rows) < max_rows and page <= 10:
             # 페이지 크기 파라미터는 display가 맞음 — numOfRows는 무시되어 20건씩 5왕복하게 됨 (2026-08-18 실측)
-            xml = _get("lawSearch.do", target="eflaw", query=law_name, display=100, page=page)
+            xml = _get("lawSearch.do", target="eflaw", display=100, page=page, **query)
             items = _parse_items(xml, "law")
             if not items:
                 break
-            for it in items:
-                if law_id and it.get("법령ID", "") != law_id:
-                    continue
-                rows.append({
-                    "법령명": it.get("법령명한글", ""),
-                    "법령ID": it.get("법령ID", ""),
-                    "MST": it.get("법령일련번호", ""),
-                    "시행일자": it.get("시행일자", ""),
-                    "공포일자": it.get("공포일자", ""),
-                    "공포번호": it.get("공포번호", ""),
-                    "제개정구분": it.get("제개정구분명", ""),
-                })
+            rows.extend(self._eflaw_row(it) for it in items)
+            if len(items) < 100:
+                break
             page += 1
-        if not law_id:
-            rows = _same_name_only(rows, law_name)
+        return rows
+
+    def _add_renamed_rows(self, rows: list, max_rows: int) -> list:
+        """이름으로 찾은 연혁에 개명 전 시행본을 보탠다. 법제처는 법령ID가 같아도 이름 검색에는 그 이름 시절의
+        행만 준다 — 남녀고용평등법(1988~2007)과 '남녀고용평등과 일·가정 양립 지원에 관한 법률'(2008~)은 같은
+        법령ID 000130인데 이름 검색은 후자 31행만 주고 1988~2007 시행본이 빠졌다(2026-10-10 실측).
+        제정 행이 없는 ID(= 앞쪽이 잘렸다)만 LID로 다시 받아 합친다 — 제정 행이 있으면 개명 없는 완결된
+        연혁이라 왕복이 늘지 않는다."""
+        by_id = {}
+        for r in rows:
+            by_id.setdefault(r.get("법령ID", ""), []).append(r)
+        have = {(r["MST"], r["시행일자"]) for r in rows}
+        out = list(rows)
+        for lid, rs in by_id.items():
+            if not lid or any((r.get("제개정구분") or "") == "제정" for r in rs):
+                continue
+            for r in self._eflaw_rows(max_rows, LID=lid):
+                if r.get("법령ID") == lid and (r["MST"], r["시행일자"]) not in have:
+                    have.add((r["MST"], r["시행일자"]))
+                    out.append(r)
+        return out
+
+    def law_history(self, law_name: str, law_id: str = "", max_rows: int = 500):
+        """target=eflaw 연혁 시행본 전체 목록. law_id를 주면 그 본법만 필터
+        (예: 부가가치세법=001571 — 같은 이름 하위법령 혼입 방지).
+        개명된 법령은 개명 전 시행본까지 포함한다(법령ID가 같으면 같은 법)."""
+        rows = []
+        if law_id:
+            # 법령ID를 알면 이름 검색을 거치지 않고 ID로 바로 받는다 — 이름 검색은 그 이름 시절의 행만 줘서
+            # 개명 전 시행본이 빠진다
+            rows = [r for r in self._eflaw_rows(max_rows, LID=law_id) if r.get("법령ID") == law_id]
+        if not rows:   # 법령ID가 없거나, ID 검색이 비면(형식 차이 등) 이름 검색으로 되돌아간다
+            rows = self._eflaw_rows(max_rows, query=law_name)
+            if law_id:
+                rows = [r for r in rows if r.get("법령ID") == law_id]
+            else:
+                rows = _same_name_only(rows, law_name)
+            if rows:
+                rows = self._add_renamed_rows(rows, max_rows)
         # 정렬 키가 시행일자 하나뿐이면, 조문별 단계 시행 때문에 **같은 시행일자에 여러 공포본**이
         # 있을 때 그 그룹의 가장 오래된 공포본이 선택된다. 실측(2026-09-01): 근로기준법
         # 시행일자 20070701에 2건이 있어 제24조 조회가 2006.12.21 공포본(구 "근로조건의 명시")을
@@ -626,10 +665,21 @@ class LawGoKrClient:
             return label, block
         return label, None
 
-    @staticmethod
-    def _block_text(block: str) -> str:
-        """조문 블록 → 사람이 읽는 원문 (개정 주석 〈…〉 보존)."""
-        return _strip_tags(_keep_notes(_strip_cdata(block)))
+    # 조문 블록 앞머리의 메타데이터 태그 — 태그만 지우면 값이 본문 앞에 줄로 남는다
+    # ('1 / 조문 / 목적 / 20260102 / 일부개정 / 000000 / N / 제1조(목적) …', 2026-10-10 실측).
+    # 조문 번호·제목은 본문 첫 줄('제1조(목적)')과 응답의 조문·조문제목 필드에 이미 있다.
+    _ARTICLE_META_RE = re.compile(
+        r"<(조문번호|조문가지번호|조문여부|조문제목|조문시행일자|조문제개정유형|조문이동이전|조문이동이후|조문변경여부|조문키)>"
+        r".*?</\1>\s*|<(?:조문번호|조문가지번호|조문여부|조문제목|조문시행일자|조문제개정유형|조문이동이전|조문이동이후|조문변경여부|조문키)\s*/>\s*",
+        re.S)
+    # 항·호·목 번호 태그가 곧바로 이어지는 내용 태그의 첫머리와 같을 때('①' 다음 '①종합소득이…')만 번호를 뺀다
+    _NUMBER_DUP_RE = re.compile(r"<(항|호|목)번호>(.+?)</\1번호>\s*(?=<\1내용>\s*\2)", re.S)
+
+    @classmethod
+    def _block_text(cls, block: str) -> str:
+        """조문 블록 → 사람이 읽는 원문 (개정 주석 〈…〉 보존, 메타데이터 줄·중복 번호 줄 제외)."""
+        t = cls._ARTICLE_META_RE.sub("", _strip_cdata(block))
+        return _strip_tags(_keep_notes(cls._NUMBER_DUP_RE.sub("", t))).strip()
 
     @staticmethod
     def _article_content_lines(block: str):
@@ -1233,8 +1283,9 @@ class LawGoKrClient:
         if not candidates:
             first = history[0]
             kind = first.get("제개정구분") or ""
-            hint = (" — 연혁 첫 행이 제정이 아니라 '" + (kind or "개정") + "'이라 그 전 시행본이 옛 법령명·옛 법령ID로 "
-                    "따로 있을 수 있음 (이름 검색 연혁에는 개명 전 시행본이 빠짐 — 옛 법령명으로 다시 조회)"
+            hint = (" — 연혁 첫 행이 제정이 아니라 '" + (kind or "개정") + "'이라 그 전 시행본이 법제처 연혁에 없거나 옛 "
+                    "법령ID(폐지 후 재제정 전의 법)로 따로 있을 수 있음 (같은 법령ID의 개명 전 시행본은 이미 포함해 찾았음 — "
+                    "옛 법령명으로 다시 조회)"
                     if kind != "제정" else
                     (" — 이 법령ID의 제정 전이다. 폐지 후 재제정된 법(근로기준법 1997.3.13 재제정, 구법 법령ID 001769 등)은 "
                      "구법 시절 조문이 따로 있으니 옛 법령명·mode='연혁'으로 확인" if law_id else ""))
@@ -1259,6 +1310,12 @@ class LawGoKrClient:
             if art.get("시행예정_부분"):
                 _add_caution(art, self._STAGED_PAST_CAUTION)
         art["적용시행본"] = {k: last[k] for k in ("법령명", "시행일자", "공포일자", "공포번호", "제개정구분", "MST")}
+        today = _today_kst()
+        in_force = [r for r in history if r.get("시행일자") and r["시행일자"] <= today] or history
+        latest_name = in_force[-1].get("법령명", "")   # 개명이 시행 예정이어도 '현재' 이름은 오늘 시행 중인 것
+        if last.get("법령명") and latest_name and _norm_name(last["법령명"]) != _norm_name(latest_name):
+            _add_caution(art, f"기준일({as_of_date}) 당시 법령명은 '{last['법령명']}'(현재 '{latest_name}', 같은 법령ID) — "
+                              f"그 사이 조문 번호·체계가 달라졌을 수 있으니 조문 제목과 내용으로 확인")
         return art
 
     _STAGED_PAST_CAUTION = (

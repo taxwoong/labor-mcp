@@ -19,7 +19,7 @@ law.go.kr 클라이언트(`law_go_kr.py`)와 인증(OC 키·IP 화이트리스�
 ![Python](https://img.shields.io/badge/python-3.10%2B-blue)
 ![MCP](https://img.shields.io/badge/MCP-streamable--http-black)
 ![tools](https://img.shields.io/badge/tools-25-brightgreen)
-![status](https://img.shields.io/badge/version-v1.3.3-informational)
+![status](https://img.shields.io/badge/version-v1.4.0-informational)
 ![license](https://img.shields.io/badge/license-MIT-green)
 
 ```bash
