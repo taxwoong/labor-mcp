@@ -54,6 +54,8 @@ from law_go_kr import (
     LawGoKrError,
     LawNotFound,
     LawUpstreamError,
+    install_oc_log_mask,
+    mask_oc,
     _get,
     _parse_items,
     _strip_cdata,
@@ -137,7 +139,7 @@ class Runner:
                 raise
             except _TRANSIENT as e:                      # 일시 오류 — 재시도
                 last = e
-                LOG.warning("%s 일시 오류(%d/%d): %s", what, i + 1, tries, str(e)[:160])
+                LOG.warning("%s 일시 오류(%d/%d): %s", what, i + 1, tries, mask_oc(e)[:160])
                 time.sleep(3 * (i + 1))
         raise last
 
@@ -162,13 +164,13 @@ class Runner:
                 body = self._call(lambda: fetch_body(row), f"{source} 본문 {doc_id}")
                 consecutive = 0
             except LawNotFound as e:
-                LOG.info("%s %s 본문 미공개 — 건너뜀 (%s)", source, doc_id, str(e)[:80])
+                LOG.info("%s %s 본문 미공개 — 건너뜀 (%s)", source, doc_id, mask_oc(e)[:80])
                 self.nobody += 1
                 continue
             except _TRANSIENT as e:
                 failed += 1
                 consecutive += 1
-                LOG.error("%s %s 본문 실패 — 건너뜀: %s", source, doc_id, str(e)[:120])
+                LOG.error("%s %s 본문 실패 — 건너뜀: %s", source, doc_id, mask_oc(e)[:120])
                 if consecutive >= 20:
                     raise LawUpstreamError(f"{source}: 연속 {consecutive}건 실패 — 원천 장애로 보고 중단")
                 continue
@@ -363,7 +365,7 @@ class Runner:
                     archive.bump_pending(self.conn, "counsel", p["doc_id"])
             except Exception as e:                              # noqa: BLE001
                 archive.bump_pending(self.conn, "counsel", p["doc_id"])
-                LOG.warning("counsel 재확인 실패 %s: %s", p["doc_id"], str(e)[:100])
+                LOG.warning("counsel 재확인 실패 %s: %s", p["doc_id"], mask_oc(e)[:100])
         버림 = archive.purge_pending(self.conn, "counsel")
         self.conn.commit()
         LOG.info("counsel 재확인 결과: 새로 담음 %d · 아직 미답변 %d · 포기 %d",
@@ -414,7 +416,7 @@ class Runner:
                         continue
                 except Exception as e:                          # noqa: BLE001
                     failed += 1
-                    LOG.error("counsel %s 본문 실패: %s", r["id"], str(e)[:120])
+                    LOG.error("counsel %s 본문 실패: %s", r["id"], mask_oc(e)[:120])
                     archive.add_pending(self.conn, "counsel", r["id"],
                                         {k: r.get(k, "") for k in ("제목", "번호", "등록일")})
                     continue
@@ -730,6 +732,7 @@ def main(argv=None) -> int:
     a = ap.parse_args(argv)
 
     logging.basicConfig(level=logging.INFO, format="[%(asctime)s] %(levelname)s %(name)s: %(message)s")
+    install_oc_log_mask()   # 적재 로그(예외 문자열·트레이스백)의 law.go.kr 기관코드(OC=…)를 가린다
     logging.getLogger("nlrc").setLevel(logging.WARNING)
     db = Path(a.db) if a.db else None
     if a.stats:
@@ -762,8 +765,8 @@ def main(argv=None) -> int:
         except Exception as e:                                  # noqa: BLE001
             conn.commit()
             rc = 1
-            archive.set_state(conn, code, f"ERROR:{type(e).__name__}", 0, str(e)[:300])
-            LOG.exception("=== %s 실패: %s", code, e)
+            archive.set_state(conn, code, f"ERROR:{type(e).__name__}", 0, mask_oc(e)[:300])   # DB 상태에도 OC를 남기지 않는다
+            LOG.exception("=== %s 실패: %s", code, mask_oc(e))
     print(json.dumps(archive.stats(conn), ensure_ascii=False, indent=1))
     return rc
 

@@ -43,6 +43,8 @@ from law_go_kr import (
     LawInvalidInput,
     LawNotFound,
     LawUpstreamError,
+    install_oc_log_mask,
+    mask_oc,
 )
 from moel_expc import MoelExpcClient
 from nlrc import NlrcClient, NlrcParseError, NlrcUpstreamError
@@ -59,6 +61,7 @@ import labor_constants as LC
 import social_insurance as si
 
 logging.basicConfig(level=os.environ.get("LOG_LEVEL", "INFO"))
+install_oc_log_mask()   # 로그 메시지·트레이스백의 law.go.kr 기관코드(OC=…)를 가린다
 
 PORT = int(os.environ.get("PORT", 8735))
 BASE_DIR = Path(__file__).parent
@@ -88,8 +91,8 @@ mcp = FastMCP(
         "자주 뒤집혀 오래된 사례는 결론이 반대인 경우가 있습니다(1년 기간제 연차 26일→11일, "
         "통상임금 '고정성' 폐기 등). 검색 응답의 '시점주의'는 그 결과에 전환일보다 앞선 자료가 "
         "섞였다는 뜻이므로, 해당 자료의 결론을 그대로 쓰지 말고 현행 기준으로 다시 판단하세요. "
-        "'시점참고'·'일자미상'도 같은 취지입니다. 현행 기준선 전체는 "
-        "labor_resource('table/시행중-개정법-기준선')에 있습니다. "
+        "'시점참고'·'일자미상'도 같은 취지입니다. labor_resource('table/시행중-개정법-기준선')은 "
+        "2026-08-28 기준 요약 — 이후 개정은 labor_law_article(mode=연혁)로 확인하세요. "
         "수치 검증(최저임금·통상/평균임금·연차·주휴·가산수당·퇴직급여·해고예고)은 계산 도구를, "
         "임금대장 전체 점검은 analyze_payroll(labor_resource('schema/임금대장-입력')의 스키마로 "
         "변환 후 호출), 급여 구조 설계는 design_pay_table을 사용하세요. "
@@ -106,8 +109,19 @@ mcp = FastMCP(
         "일괄 검증할 수 있습니다. 검색 결과가 이상하면 check_sources_health로 원천 사이트 "
         "상태를 먼저 확인하세요. "
         "계산 결과의 최종 판단에는 전문가(공인노무사) 확인이 필요함을 항상 안내하세요.\n\n"
+        "**법령 조문(labor_law_article)**: 법령 문안과 수치(금액·비율·연령·기간·사업장 규모 기준)는 "
+        "학습지식이 아니라 도구 응답을 근거로 쓰세요 — 기억과 다르면 도구 응답을 따르고 그 차이를 사용자에게 "
+        "알리세요. 현행 조문은 labor_law_article(as_of_date 생략 = 오늘)로 확인하고, 인용할 때는 "
+        "적용시행본(시행일자·공포번호)과 기준일을 함께 밝히세요. 최근 개정과 경과 특례는 본문이 아니라 "
+        "부칙에 있으니 mode='부칙'(article_no)으로 확인하세요(공포됐지만 아직 시행 전인 개정은 "
+        "'시행전_개정'·'시행전_개정_부칙_언급'). 응답에 시행예정_부분이 있으면 그 부분은 아직 시행 전이니 "
+        "시행일(사업장 규모별 '조건'이 있으면 그 조건)과 함께 안내하고, 과거 기준일 응답의 공포본_참고·"
+        "주의도 따르세요. 아직 국회 계류 중인 개정안은 공포 전이라 법령 도구에 나오지 않는 것이 정상입니다. "
+        "labor_law_article 조문 모드의 NOT_FOUND는 조문이 없다고 단정하지 말고 신설 전·조번호 오류 "
+        "가능성을 확인하세요(mode='연혁'으로 최근 개정 확인).\n\n"
         "모든 도구 응답의 status 필드 해석: "
-        "OK(정상) · NOT_FOUND(검색은 성공했고 결과 없음 — 자료 부존재로 판단해도 됨) · "
+        "OK(정상) · NOT_FOUND(검색은 성공했고 결과 없음 — 자료 부존재로 판단해도 됨, 단 법령 조문은 "
+        "위 안내를 따를 것) · "
         "UPSTREAM_ERROR(원천 사이트 접근 실패) · PARSE_ERROR(사이트 개편 등으로 응답 해석 실패) — "
         "**이 둘은 자료가 없다는 뜻이 절대 아니므로 부존재로 단정하지 말고 사용자에게 조회 "
         "실패를 알릴 것** · AUTH_ERROR(law.go.kr 기관코드·IP 등록 문제 — 부존재와 무관, "
@@ -151,6 +165,10 @@ _GUIDANCE = {
                   "서버 관리자 확인이 필요합니다 — 검색 결과 0건으로 해석하지 마세요.",
     "INVALID_INPUT": "입력 형식이 잘못됐습니다 — 오류 메시지의 형식으로 고쳐 다시 호출하세요.",
 }
+# labor_law_article 조문 모드의 NOT_FOUND 안내 — 조문 부재는 신설 전·조번호 오류일 수 있어 단정하지 않게 한다
+_ARTICLE_NOT_FOUND_GUIDE = (
+    "조문이 없다고 단정하지 말고 신설 전·조번호 오류 가능성을 확인하세요 — labor_law_article(mode='연혁')로 "
+    "최근 개정(시행일자·공포번호)을 확인하고, 시행 예정 조문이면 as_of_date를 시행일 이후로 지정해 다시 조회")
 
 
 def _status_for(exc: BaseException) -> str:
@@ -199,8 +217,9 @@ def _guard(calc_tool: bool = False, dated: bool = False):
                 out = fn(*args, **kwargs)
             except Exception as e:                      # noqa: BLE001 — 계약상 전부 포획
                 st = _status_for(e)
-                logging.warning("%s 실패(%s): %s", fn.__name__, st, e)
-                payload = {"status": st, "오류": f"{type(e).__name__}: {e}",
+                # 예외 문자열에 law.go.kr 요청 URL(OC=…)이 들어 있을 수 있다 — 응답·로그 모두 가린다
+                logging.warning("%s 실패(%s): %s", fn.__name__, st, mask_oc(e))
+                payload = {"status": st, "오류": mask_oc(f"{type(e).__name__}: {e}"),
                            "안내": _GUIDANCE[st]}
                 if calc_tool:
                     payload["주의사항"] = [_DISCLAIMER]
@@ -310,8 +329,14 @@ def labor_law_article(
         if mode == "조문":
             if not article_no:
                 return {"오류": "mode='조문'에는 article_no가 필요합니다 (예: '17', '76의2')"}
-            return _law.law_article_as_of(
-                law_name, as_of_date or _today(), article_no, law_id=law_id, max_chars=max_chars)
+            try:
+                return _law.law_article_as_of(
+                    law_name, as_of_date or _today(), article_no, law_id=law_id, max_chars=max_chars)
+            except LawNotFound as e:
+                # 조문 부재는 신설 전·조번호 오류일 수 있다 — 다른 도구의 NOT_FOUND('부존재로 판단 가능')와
+                # 안내를 달리한다 (status는 그대로 NOT_FOUND)
+                return {"status": "NOT_FOUND", "오류": mask_oc(f"{type(e).__name__}: {e}"),
+                        "안내": _ARTICLE_NOT_FOUND_GUIDE}
         if mode == "부칙":
             return _law.law_addenda(
                 law_name=law_name, law_id=law_id, as_of_date=as_of_date,
@@ -1122,7 +1147,7 @@ _RESOURCES = {
     "checklist/취업규칙": ("checklist_취업규칙.md", "취업규칙 검토 체크리스트 — 93조 14항목·불이익변경 판례·신고 실무"),
     "table/임금항목-산입매트릭스": ("임금항목_산입매트릭스.md", "임금항목별 최저임금×통상임금×평균임금 3축 판정표"),
     "table/5인미만-적용제외": ("5인미만_적용제외.md", "4인 이하 사업장 근로기준법 적용/미적용 매트릭스"),
-    "table/시행중-개정법-기준선": ("시행중_개정법_기준선.md", "2026-08 기준 시행 중 개정법·판례 기준선 + 추진 중 입법"),
+    "table/시행중-개정법-기준선": ("시행중_개정법_기준선.md", "2026-08-28 기준 요약(시행 중 개정법·판례 기준선 + 추진 중 입법) — 이후 개정은 labor_law_article(mode=연혁)로 확인"),
     "table/최저임금-연도별": ("최저임금_연도별.md", "연도별 최저임금·산입범위 스케줄·수습 감액 요건"),
     "table/4대보험-요율": ("4대보험_요율_연도별.md",
                        "연도별 건강보험·장기요양·국민연금·고용보험 요율과 상·하한 (법령·고시 근거)"),
@@ -1451,13 +1476,13 @@ def check_sources_health() -> dict:
                        "소요초": round(_t.time() - t0, 2)})
         except Exception as e:                                  # noqa: BLE001
             상태.append({"자료원": 이름, "status": _status_for(e),
-                       "오류": f"{type(e).__name__}: {e}",
+                       "오류": mask_oc(f"{type(e).__name__}: {e}"),
                        "소요초": round(_t.time() - t0, 2)})
     out = {"자료원상태": 상태, "정상": 정상, "전체": len(probes)}
     try:
         out["4대보험_요율표"] = si.verify_rates()
     except Exception as e:                                      # noqa: BLE001
-        out["4대보험_요율표"] = {"상태": f"확인 못 함 — {type(e).__name__}: {str(e)[:120]}"}
+        out["4대보험_요율표"] = {"상태": f"확인 못 함 — {type(e).__name__}: {mask_oc(e)[:120]}"}
     if 정상 < len(probes):
         out["안내"] = ("일부 자료원이 응답하지 않습니다 — 그 자료원의 검색 결과가 "
                      "0건이어도 자료 부존재로 판단하지 마세요. "
@@ -1509,8 +1534,8 @@ def review_work_rules() -> str:
         "8호 모성보호 최신 개정 반영, 11호 직장 내 괴롭힘).\n"
         "3단계 — 법 위반 검사: 연차·감급 한도(calc_wage_cut_limit)·징계 절차·"
         "근로시간 조항이 현행법 미달인지 labor_law_article로 조문 대조. "
-        "labor_resource(\"table/시행중-개정법-기준선\")로 최신 개정(육아지원 3법, "
-        "임금체불 제재 등) 반영 여부 확인.\n"
+        "labor_resource(\"table/시행중-개정법-기준선\")(2026-08-28 기준 요약)로 최신 개정(육아지원 3법, "
+        "임금체불 제재 등) 반영 여부를 확인하고, 그 뒤 개정은 labor_law_article(mode=연혁)로 확인.\n"
         "4단계 — 표준안 대조: labor_resource(\"template/표준취업규칙-2026\")과 "
         "장·조문 단위로 대비해 누락 장(괴롭힘·성희롱 예방 등)과 구법 기준 조문을 발견.\n"
         "5단계 — 불이익변경 검토(변경안인 경우): 기존 규칙과 문언 비교로 불이익 여부 "
