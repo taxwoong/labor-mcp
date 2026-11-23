@@ -12,7 +12,9 @@ ingest_archive.py — 노무 사례 아카이브 적재 CLI (archive.py의 SQLit
   iaciac 산재재심사위 · decc 행정심판례(노동·4대보험 키워드) · admrul 고용노동부·보건복지부
   행정규칙 · counsel 빠른인터넷상담 · qnabook 근로기준법 질의회시집 PDF ·
   comwel 근로복지공단 산재판례 · prec 법원 판례(전수) · expc 법제처 법령해석례(전수) ·
-  detc 헌재결정례(전수) · hidrc 건강보험분쟁조정위원회 재결례 · npsrv 국민연금 (재)심사청구 결정사례
+  detc 헌재결정례(전수) · hidrc 건강보험분쟁조정위원회 재결례 · npsrv 국민연금 (재)심사청구 결정사례 ·
+  (v1.5) simsa 근로복지공단 심사결정서 · jilbyeong 업무상질병판정위원회 질병판정서 ·
+  nlrcsum 중노위 판정·결정요지 공공데이터 파일(nlrc에 없는 건만 — nlrc에는 원본 사건번호를 채움)
 
 적재 규모(2026-09-12 실측): prec이 압도적으로 크다 — 목록 171,782건 중 본문을 받을 것이
 약 87,000건이고(나머지는 ingest_prec의 출처 제외 규칙 참조) 요청 간격 0.3초 기준 7~8시간,
@@ -33,7 +35,7 @@ detc는 약 5,000건이 **본문 미공개**다 — 헌재 지정재판부 각�
 
 원천 부하: 요청 간격(--interval, 기본 0.3초)을 지키고, 인증·한도 오류(LawAuthError)가 나면
 그 자료원은 즉시 중단한다. 일시 오류는 3회 재시도 후 건너뛴다.
-필요 환경변수: LAW_API_OC (law.go.kr 계열), DATA_GO_KR_KEY (comwel). run_server.bat과 같은
+필요 환경변수: LAW_API_OC (law.go.kr 계열), DATA_GO_KR_KEY (comwel·simsa·jilbyeong — 서비스마다 활용신청). run_server.bat과 같은
 local_env.bat을 refresh_archive.bat이 먼저 읽는다.
 """
 import argparse
@@ -469,7 +471,14 @@ class Runner:
     def ingest_comwel(self) -> tuple:
         from comwel import ComwelClient
         client = ComwelClient()
-        known = set() if self.full else archive.known_ids(self.conn, "comwel")
+        # 사건번호만으로는 문서가 갈리지 않는다 — 법원마다 번호를 따로 매겨서 '2008구단1127'이
+        # 대구지법·대전지법에 각각 있다(2026-11-23 실측: 원천 34,912행 중 사건번호 중복 269행,
+        # 그중 139건은 법원이 다른 별개 사건). 사건번호만 키로 쓰던 때는 뒤 사건이 '기존'으로
+        # 보여 영구 누락됐다. 기존 문서 id는 그대로 두고, 같은 번호인데 법원이 다르면
+        # '사건번호@법원명'으로 따로 담는다. 법원까지 같은 중복은 원천의 진짜 중복이라 버린다.
+        known = {} if self.full else {
+            r[0]: r[1] for r in self.conn.execute(
+                "SELECT doc_id, org FROM docs WHERE source='comwel'")}
         added = page = 0
         total = None
         while True:
@@ -482,7 +491,8 @@ class Runner:
             if not res["items"]:
                 break
             for i, it in enumerate(res["items"]):
-                doc_id = it["사건번호"] or f"p{page}-{i}"
+                court = it.get("법원명", "") or ""
+                doc_id = comwel_doc_id(it["사건번호"], court, known) or f"p{page}-{i}"
                 if doc_id in known:
                     continue
                 cat = " / ".join(x for x in (it.get("사건유형"), it.get("사고질병구분")) if x)
@@ -494,7 +504,7 @@ class Runner:
                                   category=cat, org=it.get("법원명", ""), body=it.get("판결문", ""),
                                   extra={"사건결과": it.get("사건결과", "")}):
                     added += 1
-                known.add(doc_id)
+                known[doc_id] = court
                 if self.limit and added >= self.limit:
                     self.conn.commit()
                     return added, 0
@@ -503,6 +513,157 @@ class Runner:
                 break
         return added, 0
 
+
+    # ---------- 근로복지공단 심사결정서 · 질병판정서 (data.go.kr, v1.5) ----------
+    def ingest_comwel_decision(self, code: str) -> tuple:
+        """목록이 번호 오름차순이라(최신순이 아님) 증분이어도 끝까지 훑는다 — 본문이 목록에
+        같이 오므로 '본문 요청'이 따로 없고, 새 번호만 저장한다. 질병판정서 617쪽 기준 한 번에
+        20분 안팎."""
+        from comwel import ComwelDecisionClient, ComwelUpstreamError
+        kind = {"simsa": "심사결정서", "jilbyeong": "질병판정서"}[code]
+        client = ComwelDecisionClient(kind)
+        known = set() if self.full else archive.known_ids(self.conn, code)
+        added = page = dup = 0
+        total = None
+        f = client.spec["fields"]
+        while True:
+            page += 1
+            for i in range(3):
+                self.throttle.wait()
+                try:
+                    res = client.search(page=page, rows=100, max_chars=10_000_000)
+                    break
+                except (ComwelUpstreamError, requests.exceptions.RequestException) as e:
+                    LOG.warning("%s p%d 일시 오류(%d/3): %s", code, page, i + 1, str(e)[:160])
+                    time.sleep(3 * (i + 1))
+            else:
+                raise LawUpstreamError(f"{code}: p{page} 3회 실패 — 원천 장애로 보고 중단")
+            if total is None:
+                total = res["total"]
+                LOG.info("%s 전체 %d건 (%d페이지)", code, total, (total + 99) // 100)
+            if not res["items"]:
+                break
+            for it in res["items"]:
+                doc_id = it[f[0]]
+                if not doc_id or doc_id in known:
+                    dup += 1 if doc_id else 0
+                    continue
+                if code == "simsa":
+                    doc = dict(title=it["사건명"], category=" / ".join(x for x in (it["청구유형"], it["쟁점구분"]) if x),
+                               extra={"결정결과": it["결정결과"]}, body=it["결정문"])
+                else:
+                    doc = dict(title=f"[{it['판정결과']}] {it['질병구분']} — {it['직종']} · {it['업종']}",
+                               category=it["질병구분"], body=it["판정서"],
+                               extra={k: it[k] for k in ("판정결과", "직종", "업종") if it.get(k)})
+                if archive.upsert(self.conn, code, doc_id, doc_no=doc_id, doc_date=it["일자_ISO"],
+                                  date_kind=it["일자근거"], org=client.spec["org"], summary=it["주문"], **doc):
+                    added += 1
+                known.add(doc_id)
+                if self.limit and added >= self.limit:
+                    self.conn.commit()
+                    return added, 0
+            self.conn.commit()
+            if added and page % 50 == 0:
+                LOG.info("%s 진행: p%d · 추가 %d", code, page, added)
+            if page * 100 >= total or (self.max_pages and page >= self.max_pages):
+                break
+        if dup:
+            LOG.info("%s: 이미 있는 번호 %d건 건너뜀", code, dup)
+        return added, 0
+
+    # ---------- 중노위 판정·결정요지 공공데이터 파일 (data.go.kr 15165738, v1.5) ----------
+    def ingest_nlrcsum(self) -> tuple:
+        """파일 5만여 건 중 nlrc(law.go.kr)에 **이미 있는 건**은 원본 사건번호만 채우고,
+        **없는 건**만 nlrcsum에 담는다. 나중에 law.go.kr에 같은 판정이 들어오면 nlrcsum 쪽을 지워
+        중복을 없앤다 — 그래서 SOURCE_ORDER에서 반드시 nlrc 뒤에 돈다.
+
+        왜 사건번호를 채우나: law.go.kr 노동위 결정문은 사건번호가 '2026BUHAOOO'처럼 가려져 와서
+        verify_citations가 아카이브로 판정례 번호를 확인할 수 없었다. 파일에는 원본 번호
+        ('2015부해998' + 관할위원회)가 있다 — '서울2015부해2684' 꼴로 붙인다.
+        대조 키는 (관할위원회, 판정요지 앞 80자 정규화) — 2026-11-23 실측 44,546건 일치."""
+        rows = nlrc_file_rows(self._nlrc_file_path())
+        index = {}
+        for doc_id, org, body in self.conn.execute(
+                "SELECT doc_id, org, body FROM docs WHERE source='nlrc'"):
+            # nlrc 본문 = 판정요지 + "\n\n" + 내용 (ingest_committee) — 요지 부분만 키로 쓴다.
+            # 통째로 쓰면 80자보다 짧은 요지는 뒤에 붙은 '내용'까지 키에 섞여 짝을 못 찾는다.
+            k = (org, _norm_key((body or "").split("\n\n", 1)[0]))
+            if k[1]:
+                index.setdefault(k, []).append(doc_id)
+        # 파일 쪽에서도 같은 (위원회, 요지)가 여러 사건에 붙어 있으면(병합 사건 등) 어느 번호를
+        # nlrc 문서에 붙일지 정할 수 없다 — 그 키는 보강하지 않는다(매달 번호가 뒤바뀌는 것 방지)
+        file_keys = {}
+        for r in rows:
+            k = (r["관할위원회"], _norm_key(r["판정요지"]))
+            file_keys[k] = file_keys.get(k, 0) + 1
+        known = archive.known_ids(self.conn, "nlrcsum")
+        added = enriched = ambiguous = removed = 0
+        for r in rows:
+            doc_no = nlrc_doc_no(r["관할위원회"], r["사건번호"])
+            key = (r["관할위원회"], _norm_key(r["판정요지"]))
+            hits = index.get(key, []) if key[1] else []
+            if len(hits) == 1 and file_keys[key] > 1:
+                ambiguous += 1
+                if doc_no in known and archive.delete(self.conn, "nlrcsum", doc_no):
+                    removed += 1
+                continue
+            if len(hits) == 1:
+                if archive.set_doc_no(self.conn, "nlrc", hits[0], doc_no,
+                                      {"사건번호출처": "data.go.kr 15165738 중노위 판정·결정요지 파일"}):
+                    enriched += 1
+                if doc_no in known and archive.delete(self.conn, "nlrcsum", doc_no):
+                    removed += 1
+                continue
+            if len(hits) > 1:
+                ambiguous += 1          # 같은 위원회에 같은 요지가 여럿 — 이미 있는 것으로 보고 담지 않는다
+                continue
+            if doc_no in known and not self.full:
+                continue
+            kind = re.sub(r"[○\s]+", " ", r["구분"]).strip()
+            y = (re.match(r"(\d{4})", r["사건번호"]) or [None, ""])[1]
+            if archive.upsert(self.conn, "nlrcsum", doc_no,
+                              title=f"{kind} — {r['관할위원회']} {r['사건번호']} ({r['판정사항']})".strip(),
+                              doc_no=doc_no, doc_date=f"{y}0101" if y else "",
+                              date_kind="사건번호 접수연도" if y else "", category=kind,
+                              org=r["관할위원회"], body=r["판정요지"],
+                              extra={"판정결과": r["판정사항"], "사건번호": r["사건번호"]}):
+                added += 1
+            known.add(doc_no)
+        self.conn.commit()
+        LOG.info("nlrcsum: 파일 %d행 · nlrc 사건번호 보강 %d · 새로 담음 %d · 중복 정리 %d · 요지 중복(보류) %d",
+                 len(rows), enriched, added, removed, ambiguous)
+        return added, 0
+
+    def _nlrc_file_path(self) -> Path:
+        """공공데이터포털 파일을 받는다. 파일이 바뀌면 첨부ID(atchFileId)가 바뀌므로 그 ID로
+        캐시해 같은 판은 다시 받지 않는다. 받은 zip은 **원천 데이터(신뢰 경계 밖)**라 data/ 아래
+        전용 폴더에만 두고 실행하지 않는다 — CSV만 읽는다."""
+        d = DATA_DIR / "nlrc_file"
+        d.mkdir(parents=True, exist_ok=True)
+        ua = {"User-Agent": "Mozilla/5.0"}
+        self.throttle.wait()
+        r = requests.post("https://www.data.go.kr/tcs/dss/selectFileDataDownload.do", timeout=60, headers=ua,
+                          data={"publicDataDetailPk": NLRC_FILE_DETAIL_PK, "publicDataPk": NLRC_FILE_PK,
+                                "atchFileId": "", "fileDetailSn": "1", "publicDataTyCode": "PR0051"})
+        r.raise_for_status()
+        meta = r.json()
+        fid = meta.get("atchFileId") or ""
+        if not meta.get("status") or not re.fullmatch(r"FILE_\d+", fid):
+            raise LawUpstreamError(f"중노위 판정요지 파일 정보 조회 실패: {str(meta)[:200]}")
+        path = d / f"{fid}.zip"
+        if path.exists() and path.stat().st_size > 0:
+            return path
+        LOG.info("중노위 판정요지 파일 내려받기 (%s) → %s", fid, path)
+        self.throttle.wait()
+        r = requests.get("https://www.data.go.kr/cmm/cmm/fileDownload.do", timeout=600, headers=ua,
+                         params={"atchFileId": fid, "fileDetailSn": "1", "dataNm": "nlrc"})
+        r.raise_for_status()
+        if not r.content.startswith(b"PK"):
+            raise LawUpstreamError("zip이 아닌 응답 — data.go.kr 다운로드 방식이 바뀐 듯함")
+        tmp = path.with_suffix(".part")
+        tmp.write_bytes(r.content)
+        tmp.replace(path)
+        return path
 
     # ---------- law.go.kr 법원 판례 (전수) ----------
     def ingest_prec(self) -> tuple:
@@ -703,16 +864,69 @@ def comwel_year(case_no: str) -> str:
     return str(y) if 1960 <= y <= _date.today().year else ""
 
 
+def comwel_doc_id(case_no: str, court: str, known: dict) -> str:
+    """산재판례 문서 id. known = {doc_id: 법원명} (이미 담긴 것).
+
+    사건번호를 먼저 쓰고, 그 번호가 다른 법원 사건으로 이미 쓰였으면 '사건번호@법원명'.
+    기존 id를 바꾸지 않아야 갱신 때 3.5만 건을 다시 받지 않는다."""
+    case_no = str(case_no or "").strip()
+    if not case_no:
+        return ""
+    if case_no in known and (known[case_no] or "") != (court or ""):
+        return f"{case_no}@{court}"
+    return case_no
+
+
+NLRC_FILE_PK = "15165738"
+NLRC_FILE_DETAIL_PK = "uddi:f8c1cf83-4428-40ad-b091-dd9b4e77f4f8"
+_NLRC_FILE_COLS = ("구분", "관할위원회", "사건번호", "판정사항", "판정요지")
+
+
+def _norm_key(text: str) -> str:
+    """대조 키 — 기호·공백을 걷어낸 앞 80자. law.go.kr과 파일은 띄어쓰기·따옴표가 조금씩 다르다."""
+    return re.sub(r"[^0-9A-Za-z가-힣]", "", text or "")[:80]
+
+
+def nlrc_doc_no(committee: str, case_no: str) -> str:
+    """'서울지방노동위원회', '2015부해2684' → '서울2015부해2684' (실무 인용 표기).
+    사건번호는 위원회마다 따로 매겨서 위원회 약칭 없이는 겹친다(5.2만 행에 번호 2.7만 종)."""
+    abbr = re.sub(r"(지방)?노동위원회$", "", (committee or "").strip())
+    no = re.sub(r"\s+", "", case_no or "")
+    return f"{abbr}{no}"
+
+
+def nlrc_file_rows(path: Path) -> list:
+    import csv
+    import io
+    import zipfile
+    with zipfile.ZipFile(path) as z:
+        names = [i for i in z.infolist() if i.filename.lower().endswith(".csv")]
+        if not names:
+            raise LawUpstreamError(f"zip 안에 CSV가 없음: {path.name}")
+        raw = z.read(names[0])
+    try:
+        text = raw.decode("utf-8-sig")
+    except UnicodeDecodeError:          # 판이 바뀌며 인코딩이 바뀌는 경우 대비
+        text = raw.decode("cp949")
+    rows = list(csv.DictReader(io.StringIO(text)))
+    if not rows or any(c not in rows[0] for c in _NLRC_FILE_COLS):
+        raise LawUpstreamError(f"CSV 열 구성이 바뀜: {list(rows[0].keys()) if rows else '빈 파일'}")
+    return [{c: (r.get(c) or "").strip() for c in _NLRC_FILE_COLS} for r in rows]
+
+
 # 작고 빠른 것부터. 가장 오래 걸리는 comwel·prec을 끝에 둬서, 앞이 실패해도 나머지가 돌고
 # 뒤가 중단돼도 앞은 이미 갱신돼 있게 한다.
-SOURCE_ORDER = ["admrul", "eiac", "iaciac", "hidrc", "npsrv", "expc", "moel", "nlrc",
-                "decc", "qnabook", "counsel", "detc", "comwel", "prec"]
+# nlrcsum은 nlrc 바로 뒤여야 한다 — nlrc에 새로 들어온 판정과 대조해 중복을 지운다.
+SOURCE_ORDER = ["admrul", "eiac", "iaciac", "hidrc", "npsrv", "expc", "moel", "nlrc", "nlrcsum",
+                "decc", "qnabook", "counsel", "simsa", "detc", "comwel", "jilbyeong", "prec"]
 
 
 def run_source(runner: Runner, code: str) -> tuple:
     if code in ("nlrc", "eiac", "iaciac"):
         return runner.ingest_committee(code)
-    return {"decc": runner.ingest_decc, "moel": runner.ingest_moel, "admrul": runner.ingest_admrul,
+    if code in ("simsa", "jilbyeong"):
+        return runner.ingest_comwel_decision(code)
+    return {"nlrcsum": runner.ingest_nlrcsum,"decc": runner.ingest_decc, "moel": runner.ingest_moel, "admrul": runner.ingest_admrul,
             "counsel": runner.ingest_counsel, "qnabook": runner.ingest_qnabook,
             "comwel": runner.ingest_comwel, "prec": runner.ingest_prec,
             "expc": runner.ingest_expc, "detc": runner.ingest_detc,

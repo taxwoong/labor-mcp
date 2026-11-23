@@ -49,7 +49,8 @@ from law_go_kr import (
 from moel_expc import MoelExpcClient
 from nlrc import NlrcClient, NlrcParseError, NlrcUpstreamError
 from law_committee import CommitteeClient
-from comwel import ComwelAuthError, ComwelClient, ComwelParseError, ComwelUpstreamError
+from comwel import (ComwelAuthError, ComwelClient, ComwelDecisionClient, ComwelParseError,
+                    ComwelUpstreamError, resolve_kind as _comwel_kind)
 from moel_fastcounsel import FastCounselClient, FastCounselParseError, FastCounselUpstreamError
 from hidrc import HidrcClient, HidrcParseError, HidrcUpstreamError, split_sections
 from nps_review import NpsReviewClient, NpsReviewParseError, NpsReviewUpstreamError
@@ -80,11 +81,12 @@ mcp = FastMCP(
         "source='노동위원회', 공식 API)를 사용하세요. 고용보험심사위원회·산재재심사위원회 "
         "결정문과 행정심판례도 committee_decision_search, 훈령·예규·고시는 "
         "labor_admin_rule_search(고용노동부·보건복지부), 근로복지공단 산재 판결문은 "
-        "comwel_precedent_search, 고용노동부 빠른인터넷상담은 moel_counsel_search입니다. "
+        "comwel_precedent_search, 근로복지공단 산재 심사결정서와 업무상질병판정위원회 "
+        "질병판정서는 comwel_decision_search, 고용노동부 빠른인터넷상담은 moel_counsel_search입니다. "
         "건강보험·국민연금 분쟁은 **특별행정심판**이라 일반 행정심판례에 안 나옵니다 — "
         "건강보험분쟁조정위원회 재결례와 국민연금 (재)심사청구 결정사례는 "
         "social_insurance_decision_search를 쓰세요. "
-        "사례를 넓게 찾을 때는 먼저 labor_archive_search(로컬 아카이브 — 위 자료원 14곳을 "
+        "사례를 넓게 찾을 때는 먼저 labor_archive_search(로컬 아카이브 — 위 자료원 17곳을 "
         "전문검색, 원천 장애와 무관, 2글자 검색어 가능)로 후보를 모으고, 최신 자료는 "
         "실시간 도구로 교차 확인하세요.\n\n"
         "**사례를 인용할 때는 반드시 그 자료의 일자를 함께 밝히세요.** 노동법은 판례·행정해석이 "
@@ -146,6 +148,7 @@ _moel = MoelExpcClient()
 _nlrc = NlrcClient()
 _committee = CommitteeClient()
 _comwel = ComwelClient()
+_comwel_dec = {k: ComwelDecisionClient(k) for k in ("심사결정서", "질병판정서")}
 _counsel = FastCounselClient()
 _hidrc = HidrcClient()
 _npsrv = NpsReviewClient()
@@ -599,6 +602,53 @@ def comwel_precedent_search(
 
 @mcp.tool(annotations=ToolAnnotations(readOnlyHint=True, openWorldHint=True))
 @_guard(dated=True)
+def comwel_decision_search(
+    kind: str = "질병판정서",
+    result: str = "",
+    type_a: str = "",
+    type_b: str = "",
+    page: int = 1,
+    rows: int = 10,
+    list_codes: bool = False,
+    max_chars: int = 6000,
+) -> dict:
+    """근로복지공단 산재 결정문 조회 (공공데이터포털 API) — 소송 전 단계의 판단.
+
+    - kind="질병판정서": 업무상질병판정위원회 판정서 61,566건(2015~2021 접수). 뇌심혈관·
+      근골격계·직업성 암·정신질환 등이 업무상 질병인지 **인정/불인정한 이유**가 그대로 있다.
+      필터 — result=판정결과(인정·불인정·일부인정…), type_a=직종, type_b=질병구분.
+    - kind="심사결정서": 근로복지공단 산재보험 심사청구 결정문 3,000건(2017년 접수분 표본).
+      필터 — result=결정결과(기각·취소·일부취소…), type_a=청구유형(요양·장해·유족…), type_b=쟁점구분.
+    순서: 질병판정(질판위) → 심사청구(공단) → 재심사청구(산재재심사위, committee_decision_search) →
+    소송(comwel_precedent_search · labor_case_search).
+
+    **키워드 검색은 없다** — 본문 키워드는 labor_archive_search(sources="질병판정서" 또는
+    "심사결정서")로 찾고, 이 도구는 유형별 탐색·원천 확인용. 필터 값은 list_codes=True로 먼저 받는다.
+    **일자**: 원천에 일자 필드가 없어 본문에서 뽑는다 — 질병판정서는 '판정요청일'(판정일은 그 뒤),
+    심사결정서는 '결정연월'(일 미공개). 인용할 때 그 근거를 함께 적을 것.
+
+    Args:
+        kind: "질병판정서" | "심사결정서"
+        result / type_a / type_b: list_codes가 돌려준 값을 그대로.
+        rows: 페이지당 건수(최대 100). max_chars: 본문 절삭 상한.
+    """
+    k = _comwel_kind(kind)
+    client = _comwel_dec[k]
+    if list_codes:
+        labels = [c[0] for c in client.spec["codes"]]
+        return {"자료원": client.spec["source"], "필터값": client.codes(),
+                "안내": f"result={labels[0]}, type_a={labels[1]}, type_b={labels[2]} 값으로 넣어 재호출"}
+    res = client.search(a=result, b=type_a, c=type_b, page=page, rows=rows, max_chars=max_chars)
+    if not res["items"] and (result or type_a or type_b):
+        # 원천 필터는 **정확히 일치**해야 걸린다('정신질환'≠'정신질환(…)') — 0건을 부존재로 읽지 않게 한다
+        res["안내"] = ("필터 값이 원천 코드와 정확히 일치하지 않으면 0건이 나옵니다 — 자료가 없다고 "
+                     "단정하지 말고 list_codes=True로 값을 확인해 다시 부르거나, "
+                     f"labor_archive_search(sources='{k}')로 키워드 검색하세요.")
+    return res
+
+
+@mcp.tool(annotations=ToolAnnotations(readOnlyHint=True, openWorldHint=True))
+@_guard(dated=True)
 def moel_counsel_search(
     keyword: str = "",
     post_id: str = "",
@@ -710,13 +760,15 @@ def labor_archive_search(
     source: str = "",
     max_chars: int = 8000,
 ) -> dict:
-    """로컬 사례 아카이브 전문검색 — 원천 14곳을 한 번에, 원천 사이트가 죽어도 동작.
+    """로컬 사례 아카이브 전문검색 — 원천 17곳을 한 번에, 원천 사이트가 죽어도 동작.
 
-    적재 자료원(sources 값): 노동위원회(nlrc) · 행정해석(moel) · 고용보험심사위원회(eiac) ·
-    산재재심사위원회(iaciac) · 행정심판(decc) · 행정규칙(admrul, 고용노동부·보건복지부) ·
-    빠른인터넷상담(counsel) · 질의회시집(qnabook) · 산재판례(comwel) · 법원판례(prec) ·
-    법령해석례(expc, 법제처) · 헌재결정례(detc) · 건강보험분쟁조정위원회(hidrc) ·
-    국민연금 (재)심사청구 결정사례(npsrv).
+    적재 자료원(sources 값): 노동위원회(nlrc + 판정요지 파일 nlrcsum) · 행정해석(moel) ·
+    고용보험심사위원회(eiac) · 산재재심사위원회(iaciac) · 행정심판(decc) ·
+    행정규칙(admrul, 고용노동부·보건복지부) · 빠른인터넷상담(counsel) · 질의회시집(qnabook) ·
+    산재판례(comwel) · 심사결정서(simsa, 근로복지공단 심사청구) · 질병판정서(jilbyeong,
+    업무상질병판정위원회) · 법원판례(prec) · 법령해석례(expc, 법제처) · 헌재결정례(detc) ·
+    건강보험분쟁조정위원회(hidrc) · 국민연금 (재)심사청구 결정사례(npsrv).
+    "근로복지공단"은 산재판례·심사결정서·질병판정서를, "산재"는 거기에 산재재심사위원회까지 펼친다.
     4대보험 질문이면 sources="건강보험,국민연금,행정심판,법원판례"처럼 좁혀 부르면 정확도가 오른다.
     매월 1일 증분 갱신되므로 **갱신 직전 며칠치는 실시간 도구로 교차 확인**할 것.
     2글자 검색어("해고")가 되고 어절은 AND. 결과에는 발췌만 오므로 본문은 source+doc_id로 다시 호출한다.
@@ -724,8 +776,9 @@ def labor_archive_search(
     **시점 대조**: 아카이브는 1965년 행정해석까지 담고 있어 결론이 이미 뒤집힌 자료가 섞인다.
     각 항목의 '일자'와 응답의 '시점주의'(전환일보다 앞선 자료가 있다는 경고)를 반드시 확인하고,
     인용할 때 일자를 함께 밝힐 것. 최근 자료만 보려면 date_from을 주거나 latest_first=True.
-    산재판례의 일자는 사건번호 접수연도에서 유추한 값("2019년경")이라 선고일이 아니고,
-    국민연금 결정사례의 일자는 공개된 '결정연도'뿐이라 월·일이 없다 — 둘 다 '일자근거'가 붙는다.
+    산재판례·노동위 판정요지 파일의 일자는 사건번호 접수연도에서 유추한 값("2019년경")이라 선고·판정일이
+    아니고, 국민연금 결정사례는 '결정연도'뿐, 심사결정서는 '결정연월'(일 미공개), 질병판정서는
+    '판정요청일'(판정일은 그 뒤)이다 — 모두 '일자근거'가 붙는다.
 
     Args:
         keyword: 검색어. 비우면 적재 현황(자료원별 건수·최근 적재일)을 반환.
@@ -1362,7 +1415,8 @@ def verify_citations(citations: list) -> dict:
         # 못 찾으면 '미확인'으로 단정하지 않고 원천 조회로 넘어간다.
         if arch is not None and kind in ("행정해석", "노동위원회"):
             try:
-                srcs = ["moel", "qnabook"] if kind == "행정해석" else ["nlrc"]
+                # nlrc의 사건번호는 v1.5부터 공공데이터 파일로 원본 번호('서울2015부해2684')가 채워진다
+                srcs = ["moel", "qnabook"] if kind == "행정해석" else ["nlrc", "nlrcsum"]
                 hits = archive.find_by_doc_no(arch, cite, sources=srcs, limit=5)
                 일치 = [h for h in hits if _cite_match(cite, h.get("문서번호", ""))]
                 if 일치:
@@ -1430,7 +1484,7 @@ def verify_citations(citations: list) -> dict:
 @mcp.tool(annotations=ToolAnnotations(readOnlyHint=True, openWorldHint=True))
 @_guard()
 def check_sources_health() -> dict:
-    """자료원 12곳(law.go.kr 7종 · 노동위원회 화면 · 빠른인터넷상담 · 산재판례 API ·
+    """자료원 14곳(law.go.kr 7종 · 노동위원회 화면 · 빠른인터넷상담 · 근로복지공단 API 3종 ·
     건강보험분쟁조정위 · 국민연금 결정사례)과 로컬 아카이브의 응답 상태 점검.
 
     검색 결과가 이상할 때 "내 서버 문제인지, 원천 사이트 문제인지"를 먼저 가른다.
@@ -1460,6 +1514,8 @@ def check_sources_health() -> dict:
         ("고용노동부 행정규칙", lambda: _law.search_admin_rules("취업규칙", org="고용노동부", display=1)["total"]),
         ("빠른인터넷상담", lambda: _counsel.list(page=1, unit=10, keyword="연차")["total"] or 0),
         ("산재판례 API(data.go.kr)", lambda: _comwel.count()),
+        ("산재 심사결정서 API(data.go.kr)", lambda: _comwel_dec["심사결정서"].count()),
+        ("질병판정서 API(data.go.kr)", lambda: _comwel_dec["질병판정서"].count()),
         ("행정심판례(4대보험)", lambda: _committee.search("decc", "건강보험료",
                                                    display=1, search_body=True)["total"]),
         ("건강보험분쟁조정위원회", lambda: _hidrc.list(page=1)["total"]),

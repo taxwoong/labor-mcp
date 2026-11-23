@@ -31,6 +31,7 @@ EXPECTED_TOOLS = {
     "labor_law_article", "moel_interpretation_search", "labor_case_search",
     "nlrc_decision_search",
     "committee_decision_search", "labor_admin_rule_search", "comwel_precedent_search",
+    "comwel_decision_search",
     "moel_counsel_search", "social_insurance_decision_search", "labor_archive_search",
     "check_minimum_wage", "calc_ordinary_avg_wage", "calc_annual_leave",
     "calc_weekly_holiday_pay", "calc_overtime_pay", "calc_severance_pay",

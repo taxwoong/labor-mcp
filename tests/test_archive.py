@@ -66,7 +66,7 @@ def test_dangi_conversion_does_not_touch_ordinary_years():
 
 
 def test_resolve_sources_aliases_and_errors():
-    assert archive.resolve_sources("노동위원회,행정해석") == ["nlrc", "moel"]
+    assert archive.resolve_sources("노동위원회,행정해석") == ["nlrc", "nlrcsum", "moel"]
     assert archive.resolve_sources(["nlrc", "nlrc"]) == ["nlrc"]
     assert archive.resolve_sources("") == []
     with pytest.raises(ValueError):
@@ -209,3 +209,42 @@ def test_open_db_readonly_requires_file(tmp_path, monkeypatch):
     ro = archive.open_db(readonly=True)
     assert archive.search(ro, "해고")["total"] == 1
     ro.close()
+
+
+# ---------------------------------------------------------------------------
+# 산재판례 — 법원이 다른 같은 사건번호 (2026-11-23: 139건 누락 발견)
+# ---------------------------------------------------------------------------
+
+def test_comwel_same_case_no_other_court_kept(monkeypatch):
+    import ingest_archive as IA
+    import comwel
+
+    data = [
+        {"사건번호": "2008구단1127", "법원명": "대구지방법원", "사건명": "요양불승인처분취소", "판결문": "대구 사건"},
+        {"사건번호": "2008구단1127", "법원명": "대전지방법원", "사건명": "요양불승인처분취소", "판결문": "대전 사건"},
+        {"사건번호": "2008구단1127", "법원명": "대전지방법원", "사건명": "요양불승인처분취소", "판결문": "대전 사건"},  # 진짜 중복
+        {"사건번호": "2019두1", "법원명": "대법원", "사건명": "유족급여", "판결문": "x"},
+    ]
+
+    class _Fake:
+        def search(self, page=1, rows=100, max_chars=0):
+            return {"total": 4, "items": data if page == 1 else []}
+
+    monkeypatch.setattr(comwel, "ComwelClient", _Fake)
+    c = sqlite3.connect(":memory:")
+    c.row_factory = sqlite3.Row
+    c.executescript(archive._SCHEMA)
+    r = IA.Runner(c, interval=0)
+    assert r.ingest_comwel() == (3, 0)
+    ids = archive.known_ids(c, "comwel")
+    assert ids == {"2008구단1127", "2008구단1127@대전지방법원", "2019두1"}
+    # 다음 달 증분: 이미 담긴 것은 다시 담지 않는다 (기존 id 유지)
+    assert IA.Runner(c, interval=0).ingest_comwel() == (0, 0)
+
+
+def test_comwel_doc_id():
+    import ingest_archive as IA
+    assert IA.comwel_doc_id("2008구단1127", "대전지방법원", {}) == "2008구단1127"
+    assert IA.comwel_doc_id("2008구단1127", "대전지방법원", {"2008구단1127": "대전지방법원"}) == "2008구단1127"
+    assert IA.comwel_doc_id("2008구단1127", "대전지방법원", {"2008구단1127": "대구지방법원"}) == "2008구단1127@대전지방법원"
+    assert IA.comwel_doc_id("", "대전지방법원", {}) == ""

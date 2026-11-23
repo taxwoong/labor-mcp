@@ -59,9 +59,22 @@ SOURCES = {
                 "simpan.go.kr 온라인행정심판 — 심판청구 재결문 PDF 전문"),
     "npsrv":   ("국민연금 (재)심사청구 결정사례",
                 "nps.or.kr 자료실 — 처분내용·청구인주장·쟁점·판단"),
+    # --- v1.5에서 추가: 근로복지공단 결정문 2종 + 중노위 판정요지 파일 ---
+    "simsa":     ("근로복지공단 산재보험 심사결정서",
+                  "data.go.kr 15110818 — 심사청구 결정문 전문(2017년 접수분 3,000건), 일자는 결정연월"),
+    "jilbyeong": ("업무상질병판정위원회 질병판정서",
+                  "data.go.kr 15110836 — 판정서 전문(2015~2021 접수), 일자는 판정요청일"),
+    "nlrcsum":   ("노동위원회 판정요지(공공데이터 파일)",
+                  "data.go.kr 15165738 중노위 판정·결정요지 CSV 중 nlrc에 없는 건 — 요지만, 일자는 사건번호 연도"),
 }
+# 값이 튜플이면 별칭 하나가 자료원 여럿으로 펼쳐진다 — 같은 기관 자료가 원천별로 나뉜 경우
+# (노동위원회 = law.go.kr 결정문 + 공공데이터 판정요지 파일)에 사용자가 둘 다 받게 한다.
 SOURCE_ALIASES = {
-    "노동위원회": "nlrc", "노동위": "nlrc", "판정례": "nlrc",
+    "노동위원회": ("nlrc", "nlrcsum"), "노동위": ("nlrc", "nlrcsum"), "판정례": ("nlrc", "nlrcsum"),
+    "판정요지": "nlrcsum", "노동위원회파일": "nlrcsum",
+    "심사결정서": "simsa", "산재심사": "simsa", "심사결정": "simsa",
+    "질병판정서": "jilbyeong", "질병판정": "jilbyeong", "업무상질병판정위원회": "jilbyeong",
+    "질판위": "jilbyeong",
     "행정해석": "moel", "질의회시": "moel", "고용노동부": "moel",
     "고용보험심사위원회": "eiac", "고용보험": "eiac",
     "산재재심사위원회": "iaciac", "산업재해보상보험재심사위원회": "iaciac", "산재재심사": "iaciac",
@@ -69,7 +82,8 @@ SOURCE_ALIASES = {
     "행정규칙": "admrul", "예규": "admrul", "훈령": "admrul", "고시": "admrul",
     "빠른인터넷상담": "counsel", "상담": "counsel", "인터넷상담": "counsel",
     "질의회시집": "qnabook",
-    "산재판례": "comwel", "근로복지공단": "comwel", "산재": "comwel",
+    "산재판례": "comwel", "근로복지공단": ("comwel", "simsa", "jilbyeong"),
+    "산재": ("comwel", "simsa", "jilbyeong", "iaciac"),
     "판례": "prec", "법원판례": "prec", "법원": "prec", "대법원": "prec",
     "법령해석례": "expc", "법제처": "expc", "법령해석": "expc",
     "헌재": "detc", "헌법재판소": "detc", "헌재결정례": "detc",
@@ -196,12 +210,13 @@ def resolve_sources(spec) -> list:
         p = p.strip()
         if not p:
             continue
-        code = SOURCE_ALIASES.get(p, p)
-        if code not in SOURCES:
-            raise ValueError(f"알 수 없는 자료원 {p!r} — 사용 가능: {', '.join(SOURCES)} "
-                             f"(별칭: {', '.join(SOURCE_ALIASES)})")
-        if code not in out:
-            out.append(code)
+        got = SOURCE_ALIASES.get(p, p)
+        for code in (got if isinstance(got, tuple) else (got,)):
+            if code not in SOURCES:
+                raise ValueError(f"알 수 없는 자료원 {p!r} — 사용 가능: {', '.join(SOURCES)} "
+                                 f"(별칭: {', '.join(SOURCE_ALIASES)})")
+            if code not in out:
+                out.append(code)
     return out
 
 
@@ -288,6 +303,40 @@ def upsert(conn: sqlite3.Connection, source: str, doc_id: str, *, title: str = "
     return True
 
 
+def delete(conn: sqlite3.Connection, source: str, doc_id: str) -> bool:
+    """문서 1건 삭제(색인 포함). 있었으면 True. 커밋은 호출자가 한다."""
+    row = conn.execute("SELECT id, title, doc_no, summary, body FROM docs WHERE source=? AND doc_id=?",
+                       (source, str(doc_id))).fetchone()
+    if not row:
+        return False
+    conn.execute("INSERT INTO docs_fts(docs_fts, rowid, ngram) VALUES('delete', ?, ?)",
+                 (row["id"], _index_text(row["title"], row["summary"], row["body"], row["doc_no"])))
+    conn.execute("DELETE FROM docs WHERE id=?", (row["id"],))
+    return True
+
+
+def set_doc_no(conn: sqlite3.Connection, source: str, doc_id: str, doc_no: str,
+               extra_update: Optional[dict] = None) -> bool:
+    """문서번호만 바꾼다(색인 갱신 포함) — 다른 필드는 그대로. 바뀌었으면 True."""
+    row = conn.execute("SELECT * FROM docs WHERE source=? AND doc_id=?", (source, str(doc_id))).fetchone()
+    if not row:
+        return False
+    try:
+        extra = json.loads(row["extra"] or "{}")
+    except ValueError:
+        extra = {}
+    new_extra = dict(extra, **(extra_update or {}))
+    if row["doc_no"] == doc_no and new_extra == extra:
+        return False
+    conn.execute("INSERT INTO docs_fts(docs_fts, rowid, ngram) VALUES('delete', ?, ?)",
+                 (row["id"], _index_text(row["title"], row["summary"], row["body"], row["doc_no"])))
+    conn.execute("UPDATE docs SET doc_no=?, extra=? WHERE id=?",
+                 (doc_no, json.dumps(new_extra, ensure_ascii=False), row["id"]))
+    conn.execute("INSERT INTO docs_fts(rowid, ngram) VALUES(?, ?)",
+                 (row["id"], _index_text(row["title"], row["summary"], row["body"], doc_no)))
+    return True
+
+
 def known_ids(conn: sqlite3.Connection, source: str) -> set:
     return {r[0] for r in conn.execute("SELECT doc_id FROM docs WHERE source=?", (source,))}
 
@@ -369,6 +418,10 @@ def _date_fields(r: sqlite3.Row) -> dict:
     d, kind = r["doc_date"], (r["date_kind"] if "date_kind" in r.keys() else "")
     if not d:
         return {"일자": "미상", "일자_ISO": ""}
+    if kind == "결정연월":          # 근로복지공단 심사결정서 — 원문에 일(日)이 비어 있다
+        return {"일자": f"{d[:4]}년 {int(d[5:7])}월 (결정연월 — 일 미공개)", "일자_ISO": d, "일자근거": kind}
+    if kind == "판정요청일":        # 질병판정서 — 판정일이 아니라 판정 요청일
+        return {"일자": f"{d} (판정요청일 — 판정일은 그 이후)", "일자_ISO": d, "일자근거": kind}
     if kind:
         # 문구를 자료원에 안 맞게 박아 두면 안 된다 — '결정연도'(국민연금)에 "선고·의결일
         # 아님"이 붙으면 어색하고, 요점은 어느 쪽이든 **확정 일자가 아니라는 것**이다
@@ -465,10 +518,16 @@ def search(conn: sqlite3.Connection, keyword: str, sources=None, date_from: str 
 
 def get(conn: sqlite3.Connection, source: str, doc_id: str, max_chars: int = 8000) -> Optional[dict]:
     codes = resolve_sources(source)
-    if len(codes) != 1:
+    if not codes:
+        raise ValueError("source(자료원)를 지정하세요")
+    if len(codes) > 1 and isinstance(source, str) and source.strip() not in SOURCE_ALIASES:
         raise ValueError("source는 자료원 하나만 지정하세요")
-    r = conn.execute("SELECT * FROM docs WHERE source=? AND doc_id=?", (codes[0], str(doc_id).strip())).fetchone()
-    return _row_to_item(r, [], with_body=True, max_chars=max_chars) if r else None
+    # '노동위원회'처럼 여러 자료원으로 펼쳐지는 별칭이면 차례로 찾는다
+    for code in codes:
+        r = conn.execute("SELECT * FROM docs WHERE source=? AND doc_id=?", (code, str(doc_id).strip())).fetchone()
+        if r:
+            return _row_to_item(r, [], with_body=True, max_chars=max_chars)
+    return None
 
 
 def find_by_doc_no(conn: sqlite3.Connection, doc_no: str, sources=None, limit: int = 10) -> list:
